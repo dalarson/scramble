@@ -1,4 +1,5 @@
 import Link from "next/link";
+import TournamentSetupClient from "@/components/tournament-setup-client";
 
 export default function TournamentPage() {
   return (
@@ -6,10 +7,12 @@ export default function TournamentPage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Tournament Hub</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">
-          Foundation is in place. Next milestone wires creation and live scoring
-          flows to Supabase.
+          Tournament setup is now wired to Supabase for courses, tee sets, holes,
+          players, tournaments, and teams.
         </p>
       </header>
+
+      <TournamentSetupClient />
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Link
