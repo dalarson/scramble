@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getSupabaseClient } from "@/lib/supabase";
 import { getTournamentSnapshot } from "@/services/liveTournament";
 import { listTournaments } from "@/services/tournamentSetup";
 
@@ -35,6 +36,50 @@ export function useTournamentSnapshot(initialTournamentId?: string) {
     enabled: Boolean(effectiveSelectedTournamentId),
     staleTime: QUERY_STALE_TIME_MS,
   });
+
+  // Supabase Realtime — invalidate snapshot whenever hole_scores or
+  // beer_events change so all connected devices see live updates.
+  const channelRef = useRef<ReturnType<ReturnType<typeof getSupabaseClient>["channel"]> | null>(null);
+
+  useEffect(() => {
+    if (!effectiveSelectedTournamentId) {
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    const channelName = `tournament-sync-${effectiveSelectedTournamentId}`;
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "hole_scores" },
+        () => {
+          void queryClient.invalidateQueries({
+            queryKey: ["tournament-snapshot", effectiveSelectedTournamentId],
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "beer_events" },
+        () => {
+          void queryClient.invalidateQueries({
+            queryKey: ["tournament-snapshot", effectiveSelectedTournamentId],
+          });
+        },
+      )
+      .subscribe();
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        void supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [effectiveSelectedTournamentId, queryClient]);
 
   const refreshTournamentList = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: ["tournaments"] });

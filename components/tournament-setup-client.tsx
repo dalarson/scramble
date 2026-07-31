@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import type { Course, Player, Team, TeeSet, Tournament } from "@/types";
 import { addTeamPlayer, listTeams } from "@/services/liveTournament";
 import {
@@ -56,6 +57,7 @@ export default function TournamentSetupClient() {
   const [playerName, setPlayerName] = useState("");
   const [playerGolfHandicap, setPlayerGolfHandicap] = useState("");
   const [playerBeerHandicap, setPlayerBeerHandicap] = useState("");
+  const [playerPhotoUrl, setPlayerPhotoUrl] = useState("");
 
   const [tournamentName, setTournamentName] = useState("");
   const [tournamentDate, setTournamentDate] = useState("");
@@ -334,6 +336,13 @@ export default function TournamentSetupClient() {
           value={playerBeerHandicap}
           onChange={(event) => setPlayerBeerHandicap(event.target.value)}
         />
+        <input
+          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+          placeholder="Photo URL (optional)"
+          type="url"
+          value={playerPhotoUrl}
+          onChange={(event) => setPlayerPhotoUrl(event.target.value)}
+        />
         <button
           className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
           disabled={!playerName.trim() || loading}
@@ -343,10 +352,12 @@ export default function TournamentSetupClient() {
                 name: playerName,
                 golfHandicap: toNumberOrUndefined(playerGolfHandicap),
                 beerHandicap: toNumberOrUndefined(playerBeerHandicap),
+                photoUrl: playerPhotoUrl || undefined,
               });
               setPlayerName("");
               setPlayerGolfHandicap("");
               setPlayerBeerHandicap("");
+              setPlayerPhotoUrl("");
               setNotice({ kind: "success", text: `Created player: ${created.name}` });
               await refresh();
             } catch (error) {
@@ -542,35 +553,48 @@ export default function TournamentSetupClient() {
 
       {teams.length > 0 ? (
         <div className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-          <h2 className="font-medium">Team Live Links</h2>
+          <h2 className="font-medium">Team QR Codes</h2>
           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-            Use these routes for team QR codes so players land directly in their
-            team-scoped live view.
+            Print or share each team's QR code. Scanning it opens the team's
+            live scoring view directly — no login needed.
           </p>
           {teams.map((team) => {
             const tournament = tournamentsById.get(team.tournamentId);
             const path = `/tournament/${team.tournamentId}/team/${team.id}?access=${team.accessToken}`;
+            const fullUrl =
+              typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
             return (
               <div
                 key={team.id}
-                className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-700"
+                className="grid gap-3 rounded-lg border border-zinc-200 p-3 sm:grid-cols-[auto_1fr] dark:border-zinc-700"
               >
-                <div className="font-medium">{team.name}</div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  {tournament?.name ?? "Tournament"}
+                <div className="flex justify-center sm:justify-start">
+                  <QRCodeSVG
+                    value={fullUrl}
+                    size={120}
+                    className="rounded"
+                  />
                 </div>
-                <div className="mt-2 break-all rounded bg-zinc-100 px-2 py-2 text-xs dark:bg-zinc-900">
-                  {path}
+                <div className="flex flex-col justify-between gap-2">
+                  <div>
+                    <div className="font-medium">{team.name}</div>
+                    <div className="mt-0.5 text-xs text-zinc-500">
+                      {tournament?.name ?? "Tournament"}
+                    </div>
+                    <div className="mt-2 break-all rounded bg-zinc-100 px-2 py-1.5 text-[10px] dark:bg-zinc-900">
+                      {path}
+                    </div>
+                  </div>
+                  <button
+                    className="self-start rounded border border-zinc-300 px-3 py-1.5 text-xs dark:border-zinc-700"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(fullUrl);
+                      setNotice({ kind: "success", text: `Copied link for ${team.name}.` });
+                    }}
+                  >
+                    Copy Link
+                  </button>
                 </div>
-                <button
-                  className="mt-2 rounded border border-zinc-300 px-3 py-2 text-xs dark:border-zinc-700"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(path);
-                    setNotice({ kind: "success", text: `Copied live link for ${team.name}.` });
-                  }}
-                >
-                  Copy Link
-                </button>
               </div>
             );
           })}

@@ -242,6 +242,7 @@ export async function createPlayer(input: {
   name: string;
   golfHandicap?: number;
   beerHandicap?: number;
+  photoUrl?: string;
 }): Promise<Player> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -250,6 +251,7 @@ export async function createPlayer(input: {
       name: input.name.trim(),
       golf_handicap: input.golfHandicap ?? null,
       beer_handicap: input.beerHandicap ?? null,
+      photo_url: input.photoUrl?.trim() || null,
     })
     .select("id,name,golf_handicap,beer_handicap,photo_url")
     .single();
