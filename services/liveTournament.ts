@@ -37,6 +37,7 @@ type TeamRow = {
   name: string;
   captain_player_id: string;
   access_token: string;
+  draft_order: number;
 };
 
 type PlayerRow = {
@@ -101,6 +102,7 @@ function mapTeam(row: TeamRow): Team {
     name: row.name,
     captainPlayerId: row.captain_player_id,
     accessToken: row.access_token,
+    draftOrder: row.draft_order,
   };
 }
 
@@ -129,8 +131,8 @@ export async function listTeams(tournamentId?: string): Promise<Team[]> {
   const supabase = getSupabaseClient();
   const query = supabase
     .from("teams")
-    .select("id,tournament_id,name,captain_player_id,access_token")
-    .order("name", { ascending: true });
+    .select("id,tournament_id,name,captain_player_id,access_token,draft_order")
+    .order("draft_order", { ascending: true });
   const finalQuery = tournamentId ? query.eq("tournament_id", tournamentId) : query;
   const { data, error } = await finalQuery;
 
@@ -161,6 +163,48 @@ export async function addTeamPlayer(input: {
   playerId: string;
 }): Promise<TeamPlayer> {
   const supabase = getSupabaseClient();
+  const { data: teamRow, error: teamError } = await supabase
+    .from("teams")
+    .select("tournament_id")
+    .eq("id", input.teamId)
+    .single();
+
+  if (teamError || !teamRow) {
+    throw new Error(
+      `Failed to load team for roster assignment: ${teamError?.message ?? "Unknown error"}`,
+    );
+  }
+
+  const { data: tournamentTeams, error: tournamentTeamsError } = await supabase
+    .from("teams")
+    .select("id")
+    .eq("tournament_id", teamRow.tournament_id);
+
+  if (tournamentTeamsError) {
+    throw new Error(`Failed to load tournament teams: ${tournamentTeamsError.message}`);
+  }
+
+  const tournamentTeamIds = (tournamentTeams ?? []).map((team) => team.id);
+  if (tournamentTeamIds.length > 0) {
+    const { data: existingTournamentPlayer, error: existingTournamentPlayerError } =
+      await supabase
+        .from("team_players")
+        .select("team_id,player_id,draft_position")
+        .eq("player_id", input.playerId)
+        .in("team_id", tournamentTeamIds)
+        .maybeSingle();
+
+    if (existingTournamentPlayerError) {
+      throw new Error(
+        `Failed to validate drafted player: ${existingTournamentPlayerError.message}`,
+      );
+    }
+
+    if (existingTournamentPlayer) {
+      throw new Error("That player has already been assigned within this tournament.");
+    }
+  }
+
   const { data: existingRows, error: existingError } = await supabase
     .from("team_players")
     .select("team_id,player_id,draft_position")
@@ -225,7 +269,7 @@ export async function validateTeamAccess(input: {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("teams")
-    .select("id,tournament_id,name,captain_player_id,access_token")
+    .select("id,tournament_id,name,captain_player_id,access_token,draft_order")
     .eq("id", input.teamId)
     .eq("tournament_id", input.tournamentId)
     .eq("access_token", input.accessToken)

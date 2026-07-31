@@ -52,6 +52,7 @@ export interface Team {
   name: string;
   captainPlayerId: string;
   accessToken: string;
+  draftOrder: number;
 }
 
 export interface TeamPlayer {

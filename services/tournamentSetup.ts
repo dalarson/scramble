@@ -51,6 +51,7 @@ type TeamRow = {
   name: string;
   captain_player_id: string;
   access_token: string;
+  draft_order: number;
 };
 
 function mapCourse(row: CourseRow): Course {
@@ -114,6 +115,7 @@ function mapTeam(row: TeamRow): Team {
     name: row.name,
     captainPlayerId: row.captain_player_id,
     accessToken: row.access_token,
+    draftOrder: row.draft_order,
   };
 }
 
@@ -311,19 +313,46 @@ export async function createTeam(input: {
   captainPlayerId: string;
 }): Promise<Team> {
   const supabase = getSupabaseClient();
+  const { data: existingTeams, error: existingTeamsError } = await supabase
+    .from("teams")
+    .select("draft_order")
+    .eq("tournament_id", input.tournamentId)
+    .order("draft_order", { ascending: false })
+    .limit(1);
+
+  if (existingTeamsError) {
+    throw new Error(`Failed to load current draft order: ${existingTeamsError.message}`);
+  }
+
+  const nextDraftOrder = (existingTeams?.[0]?.draft_order ?? 0) + 1;
   const { data, error } = await supabase
     .from("teams")
     .insert({
       tournament_id: input.tournamentId,
       name: input.name.trim(),
       captain_player_id: input.captainPlayerId,
+      draft_order: nextDraftOrder,
     })
-    .select("id,tournament_id,name,captain_player_id,access_token")
+    .select("id,tournament_id,name,captain_player_id,access_token,draft_order")
     .single();
 
   if (error || !data) {
     throw new Error(`Failed to create team: ${error?.message ?? "Unknown error"}`);
   }
 
-  return mapTeam(data as TeamRow);
+  const createdTeam = mapTeam(data as TeamRow);
+  const { error: captainAssignmentError } = await supabase.from("team_players").insert({
+    team_id: createdTeam.id,
+    player_id: createdTeam.captainPlayerId,
+    draft_position: 1,
+  });
+
+  if (captainAssignmentError) {
+    await supabase.from("teams").delete().eq("id", createdTeam.id);
+    throw new Error(
+      `Failed to add captain to team roster: ${captainAssignmentError.message}`,
+    );
+  }
+
+  return createdTeam;
 }
