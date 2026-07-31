@@ -19,6 +19,8 @@ function buildLeaderboardEntries(teams: readonly LiveTeamSummary[]): Leaderboard
       teamName: teamSummary.team.name,
       holeNumber: teamSummary.currentHole?.number ?? null,
       holesPlayed: teamSummary.holesPlayed,
+      grossScore: teamSummary.grossScore,
+      netScore: teamSummary.netScore,
       toParScore: teamSummary.toParScore,
       beerBonus: teamSummary.beerBonus,
       birdies: teamSummary.birdies,

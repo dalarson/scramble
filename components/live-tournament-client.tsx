@@ -501,8 +501,8 @@ function ScoreButton(input: {
     <button
       className={`flex aspect-square items-center justify-center rounded-[1.5rem] text-xl font-semibold shadow-[inset_0_2px_0_rgba(255,255,255,0.2),inset_0_-8px_12px_rgba(0,0,0,0.22),0_12px_22px_rgba(0,0,0,0.16)] transition disabled:opacity-40 ${
         input.isSelected
-          ? "bg-linear-to-b from-emerald-400 to-emerald-700 text-white"
-          : "bg-linear-to-b from-zinc-700 to-zinc-900 text-white dark:from-zinc-100 dark:to-zinc-300 dark:text-zinc-900"
+          ? "bg-gradient-to-b from-emerald-400 to-emerald-700 text-white"
+          : "bg-gradient-to-b from-zinc-700 to-zinc-900 text-white dark:from-zinc-100 dark:to-zinc-300 dark:text-zinc-900"
       }`}
       disabled={input.disabled}
       onClick={input.onClick}

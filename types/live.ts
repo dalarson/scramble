@@ -32,6 +32,8 @@ export interface LeaderboardEntry {
   teamName: string;
   holeNumber: number | null;
   holesPlayed: number;
+  grossScore: number;
+  netScore: number;
   toParScore: number;
   beerBonus: number;
   birdies: number;

@@ -39,6 +39,12 @@ export default function TournamentPage() {
         >
           Player Stats
         </Link>
+        <Link
+          className="rounded-lg border border-zinc-200 p-4 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          href="/history"
+        >
+          Tournament History
+        </Link>
       </section>
     </main>
   );
