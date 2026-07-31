@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { draftPlayer, getDraftSnapshot, moveTeamDraftOrder } from "@/services/draft";
+import { draftPlayer, getDraftSnapshot, moveTeamDraftOrder, undoLastDraftPick } from "@/services/draft";
 import { listTournaments } from "@/services/tournamentSetup";
 import type { Player, TeamRosterEntry } from "@/types";
 
@@ -65,6 +65,7 @@ export default function DraftRoomClient() {
   const draftSnapshot = draftQuery.data ?? null;
   const canReorderTeams =
     draftSnapshot?.teams.every((team) => team.players.length <= 1) ?? false;
+  const canUndo = draftSnapshot?.teams.some((team) => team.players.length > 1) ?? false;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -139,8 +140,24 @@ export default function DraftRoomClient() {
                     : "Every team has a full roster."}
                 </div>
               </div>
-              <div className="rounded-2xl bg-zinc-100 px-4 py-3 text-sm dark:bg-zinc-900">
-                Max roster size: <strong>{draftSnapshot.maxPlayersPerTeam}</strong>
+              <div className="flex items-center gap-3">
+                <button
+                  title="Undo last pick"
+                  className="rounded-full border border-zinc-300 px-3 py-2 text-sm shadow-sm transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  disabled={busy || !canUndo}
+                  onClick={() =>
+                    void runAction(async () => {
+                      await undoLastDraftPick(draftSnapshot.tournament.id);
+                      await refreshDraft();
+                      setNotice({ kind: "success", text: "Last pick undone." });
+                    })
+                  }
+                >
+                  ↩ Undo
+                </button>
+                <div className="rounded-2xl bg-zinc-100 px-4 py-3 text-sm dark:bg-zinc-900">
+                  Max roster size: <strong>{draftSnapshot.maxPlayersPerTeam}</strong>
+                </div>
               </div>
             </div>
           </section>

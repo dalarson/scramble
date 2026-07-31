@@ -1,4 +1,4 @@
-import { getNextSnakePick, MAX_TEAM_PLAYERS } from "@/lib/draft";
+import { getNextSnakePick, getSnakePickSequence, MAX_TEAM_PLAYERS } from "@/lib/draft";
 import { getSupabaseClient } from "@/lib/supabase";
 import { addTeamPlayer, listTeams } from "@/services/liveTournament";
 import { listPlayers, listTournaments } from "@/services/tournamentSetup";
@@ -230,5 +230,66 @@ export async function moveTeamDraftOrder(input: {
 
   if (finalizeError) {
     throw new Error(`Failed to reorder draft teams: ${finalizeError.message}`);
+  }
+}
+
+export async function undoLastDraftPick(tournamentId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const teams = await listTeams(tournamentId);
+  const teamIds = teams.map((team) => team.id);
+  const teamPlayerRows = await loadTournamentTeamPlayers(teamIds);
+
+  // Collect non-captain picks (draft_position > 1) per team
+  const nonCaptainsByTeamId = new Map<
+    string,
+    { teamId: string; playerId: string; draftPosition: number }[]
+  >();
+  for (const row of teamPlayerRows) {
+    if (row.draft_position > 1) {
+      const picks = nonCaptainsByTeamId.get(row.team_id) ?? [];
+      picks.push({
+        teamId: row.team_id,
+        playerId: row.player_id,
+        draftPosition: row.draft_position,
+      });
+      nonCaptainsByTeamId.set(row.team_id, picks);
+    }
+  }
+
+  const totalNonCaptainPicks = teamIds.reduce(
+    (sum, teamId) => sum + (nonCaptainsByTeamId.get(teamId)?.length ?? 0),
+    0,
+  );
+
+  if (totalNonCaptainPicks === 0) {
+    throw new Error("There are no picks to undo.");
+  }
+
+  // Determine which team made the last pick using the deterministic snake sequence
+  const sequence = getSnakePickSequence(teamIds, MAX_TEAM_PLAYERS - 1);
+  const lastPickSummary = sequence[totalNonCaptainPicks - 1];
+
+  if (!lastPickSummary) {
+    throw new Error("Could not determine the last pick to undo.");
+  }
+
+  // Find that team's highest-position (most recent) non-captain pick
+  const teamPicks = (nonCaptainsByTeamId.get(lastPickSummary.teamId) ?? []).sort(
+    (a, b) => b.draftPosition - a.draftPosition,
+  );
+  const lastPick = teamPicks[0];
+
+  if (!lastPick) {
+    throw new Error("Could not find the last pick to undo.");
+  }
+
+  const { error } = await supabase
+    .from("team_players")
+    .delete()
+    .eq("team_id", lastPick.teamId)
+    .eq("player_id", lastPick.playerId);
+
+  if (error) {
+    throw new Error(`Failed to undo last pick: ${error.message}`);
   }
 }
