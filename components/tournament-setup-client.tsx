@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { Course, Player, TeeSet, Tournament } from "@/types";
+import type { Course, Player, Team, TeeSet, Tournament } from "@/types";
+import { addTeamPlayer, listTeams } from "@/services/liveTournament";
 import {
   createCourse,
   createHole,
@@ -32,6 +33,7 @@ export default function TournamentSetupClient() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [teeSets, setTeeSets] = useState<TeeSet[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [loading, setLoading] = useState(false);
@@ -63,25 +65,35 @@ export default function TournamentSetupClient() {
   const [teamName, setTeamName] = useState("");
   const [teamTournamentId, setTeamTournamentId] = useState("");
   const [teamCaptainId, setTeamCaptainId] = useState("");
+  const [rosterTeamId, setRosterTeamId] = useState("");
+  const [rosterPlayerId, setRosterPlayerId] = useState("");
 
   const teeSetsForSelectedTournamentCourse = useMemo(
     () => teeSets.filter((teeSet) => teeSet.courseId === tournamentCourseId),
     [teeSets, tournamentCourseId],
   );
+  const tournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
+  const effectiveTournamentTeeSetId = teeSetsForSelectedTournamentCourse.some(
+    (teeSet) => teeSet.id === tournamentTeeSetId,
+  )
+    ? tournamentTeeSetId
+    : (teeSetsForSelectedTournamentCourse[0]?.id ?? "");
 
   async function refresh() {
     setLoading(true);
     try {
-      const [nextCourses, nextTeeSets, nextPlayers, nextTournaments] =
+      const [nextCourses, nextTeeSets, nextPlayers, nextTournaments, nextTeams] =
         await Promise.all([
           listCourses(),
           listTeeSets(),
           listPlayers(),
           listTournaments(),
+          listTeams(),
         ]);
       setCourses(nextCourses);
       setTeeSets(nextTeeSets);
       setPlayers(nextPlayers);
+      setTeams(nextTeams);
       setTournaments(nextTournaments);
       setTeeCourseId((current) => current || nextCourses[0]?.id || "");
       setHoleTeeSetId((current) => current || nextTeeSets[0]?.id || "");
@@ -89,6 +101,8 @@ export default function TournamentSetupClient() {
       setTournamentTeeSetId((current) => current || nextTeeSets[0]?.id || "");
       setTeamTournamentId((current) => current || nextTournaments[0]?.id || "");
       setTeamCaptainId((current) => current || nextPlayers[0]?.id || "");
+      setRosterTeamId((current) => current || nextTeams[0]?.id || "");
+      setRosterPlayerId((current) => current || nextPlayers[0]?.id || "");
     } catch (error) {
       setNotice({
         kind: "error",
@@ -100,18 +114,11 @@ export default function TournamentSetupClient() {
   }
 
   useEffect(() => {
-    void refresh();
+    const timeoutId = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
-
-  useEffect(() => {
-    if (!tournamentCourseId) {
-      return;
-    }
-    const first = teeSetsForSelectedTournamentCourse[0];
-    if (first && !teeSetsForSelectedTournamentCourse.some((t) => t.id === tournamentTeeSetId)) {
-      setTournamentTeeSetId(first.id);
-    }
-  }, [teeSetsForSelectedTournamentCourse, tournamentCourseId, tournamentTeeSetId]);
 
   return (
     <div className="space-y-6">
@@ -382,7 +389,7 @@ export default function TournamentSetupClient() {
         </select>
         <select
           className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={tournamentTeeSetId}
+          value={effectiveTournamentTeeSetId}
           onChange={(event) => setTournamentTeeSetId(event.target.value)}
         >
           <option value="">Select tee set</option>
@@ -398,7 +405,7 @@ export default function TournamentSetupClient() {
             !tournamentName.trim() ||
             !tournamentDate ||
             !tournamentCourseId ||
-            !tournamentTeeSetId ||
+            !effectiveTournamentTeeSetId ||
             loading
           }
           onClick={async () => {
@@ -407,7 +414,7 @@ export default function TournamentSetupClient() {
                 name: tournamentName,
                 date: tournamentDate,
                 courseId: tournamentCourseId,
-                teeSetId: tournamentTeeSetId,
+                teeSetId: effectiveTournamentTeeSetId,
               });
               setTournamentName("");
               setTournamentDate("");
@@ -472,6 +479,7 @@ export default function TournamentSetupClient() {
               });
               setTeamName("");
               setNotice({ kind: "success", text: `Created team: ${created.name}` });
+              await refresh();
             } catch (error) {
               setNotice({
                 kind: "error",
@@ -483,6 +491,91 @@ export default function TournamentSetupClient() {
           Add Team
         </button>
       </div>
+
+      <div className="grid gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+        <h2 className="font-medium">Assign Team Player</h2>
+        <select
+          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+          value={rosterTeamId}
+          onChange={(event) => setRosterTeamId(event.target.value)}
+        >
+          <option value="">Select team</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+          value={rosterPlayerId}
+          onChange={(event) => setRosterPlayerId(event.target.value)}
+        >
+          <option value="">Select player</option>
+          {players.map((player) => (
+            <option key={player.id} value={player.id}>
+              {player.name}
+            </option>
+          ))}
+        </select>
+        <button
+          className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+          disabled={!rosterTeamId || !rosterPlayerId || loading}
+          onClick={async () => {
+            try {
+              await addTeamPlayer({ teamId: rosterTeamId, playerId: rosterPlayerId });
+              setNotice({ kind: "success", text: "Assigned player to team." });
+            } catch (error) {
+              setNotice({
+                kind: "error",
+                text:
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to assign player to team.",
+              });
+            }
+          }}
+        >
+          Add Player To Team
+        </button>
+      </div>
+
+      {teams.length > 0 ? (
+        <div className="grid gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+          <h2 className="font-medium">Team Live Links</h2>
+          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+            Use these routes for team QR codes so players land directly in their
+            team-scoped live view.
+          </p>
+          {teams.map((team) => {
+            const tournament = tournamentsById.get(team.tournamentId);
+            const path = `/tournament/${team.tournamentId}/team/${team.id}?access=${team.accessToken}`;
+            return (
+              <div
+                key={team.id}
+                className="rounded border border-zinc-200 p-3 text-sm dark:border-zinc-700"
+              >
+                <div className="font-medium">{team.name}</div>
+                <div className="mt-1 text-xs text-zinc-500">
+                  {tournament?.name ?? "Tournament"}
+                </div>
+                <div className="mt-2 break-all rounded bg-zinc-100 px-2 py-2 text-xs dark:bg-zinc-900">
+                  {path}
+                </div>
+                <button
+                  className="mt-2 rounded border border-zinc-300 px-3 py-2 text-xs dark:border-zinc-700"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(path);
+                    setNotice({ kind: "success", text: `Copied live link for ${team.name}.` });
+                  }}
+                >
+                  Copy Link
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }

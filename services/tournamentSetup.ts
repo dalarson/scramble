@@ -50,6 +50,7 @@ type TeamRow = {
   tournament_id: string;
   name: string;
   captain_player_id: string;
+  access_token: string;
 };
 
 function mapCourse(row: CourseRow): Course {
@@ -112,6 +113,7 @@ function mapTeam(row: TeamRow): Team {
     tournamentId: row.tournament_id,
     name: row.name,
     captainPlayerId: row.captain_player_id,
+    accessToken: row.access_token,
   };
 }
 
@@ -316,7 +318,7 @@ export async function createTeam(input: {
       name: input.name.trim(),
       captain_player_id: input.captainPlayerId,
     })
-    .select("id,tournament_id,name,captain_player_id")
+    .select("id,tournament_id,name,captain_player_id,access_token")
     .single();
 
   if (error || !data) {

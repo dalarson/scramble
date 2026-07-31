@@ -23,6 +23,12 @@ export default function TournamentPage() {
         </Link>
         <Link
           className="rounded-lg border border-zinc-200 p-4 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+          href="/tournament/live"
+        >
+          Live Tournament
+        </Link>
+        <Link
+          className="rounded-lg border border-zinc-200 p-4 text-sm hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
           href="/draft"
         >
           Draft

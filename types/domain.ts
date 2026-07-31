@@ -51,6 +51,7 @@ export interface Team {
   tournamentId: string;
   name: string;
   captainPlayerId: string;
+  accessToken: string;
 }
 
 export interface TeamPlayer {
@@ -78,11 +79,14 @@ export interface BeerEvent {
 
 export interface TeamStats {
   teamId: string;
+  holesPlayed: number;
+  parPlayed: number;
   grossScore: number;
   beerBonus: number;
   birdies: number;
   birdieJuice: number;
   birdieDebt: number;
   netScore: number;
+  toParScore: number;
   status: TeamStatus;
 }
