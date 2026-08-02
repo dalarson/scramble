@@ -2,16 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import type { Course, Player, Team, TeeSet, Tournament } from "@/types";
-import { addTeamPlayer, listTeams } from "@/services/liveTournament";
+import type { Course, Team, TeeSet, Tournament } from "@/types";
+import { listTeams } from "@/services/liveTournament";
 import {
   createCourse,
   createHole,
-  createTeam,
   createTeeSet,
   createTournament,
   listCourses,
-  listPlayers,
   listTeeSets,
   listTournaments,
 } from "@/services/tournamentSetup";
@@ -32,7 +30,6 @@ function toNumberOrUndefined(value: string): number | undefined {
 export default function TournamentSetupClient() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [teeSets, setTeeSets] = useState<TeeSet[]>([]);
-  const [players, setPlayers] = useState<Player[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -58,12 +55,6 @@ export default function TournamentSetupClient() {
   const [tournamentCourseId, setTournamentCourseId] = useState("");
   const [tournamentTeeSetId, setTournamentTeeSetId] = useState("");
 
-  const [teamName, setTeamName] = useState("");
-  const [teamTournamentId, setTeamTournamentId] = useState("");
-  const [teamCaptainId, setTeamCaptainId] = useState("");
-  const [rosterTeamId, setRosterTeamId] = useState("");
-  const [rosterPlayerId, setRosterPlayerId] = useState("");
-
   const teeSetsForSelectedTournamentCourse = useMemo(
     () => teeSets.filter((teeSet) => teeSet.courseId === tournamentCourseId),
     [teeSets, tournamentCourseId],
@@ -78,27 +69,21 @@ export default function TournamentSetupClient() {
   async function refresh() {
     setLoading(true);
     try {
-      const [nextCourses, nextTeeSets, nextPlayers, nextTournaments, nextTeams] =
+      const [nextCourses, nextTeeSets, nextTournaments, nextTeams] =
         await Promise.all([
           listCourses(),
           listTeeSets(),
-          listPlayers(),
           listTournaments(),
           listTeams(),
         ]);
       setCourses(nextCourses);
       setTeeSets(nextTeeSets);
-      setPlayers(nextPlayers);
       setTeams(nextTeams);
       setTournaments(nextTournaments);
       setTeeCourseId((current) => current || nextCourses[0]?.id || "");
       setHoleTeeSetId((current) => current || nextTeeSets[0]?.id || "");
       setTournamentCourseId((current) => current || nextCourses[0]?.id || "");
       setTournamentTeeSetId((current) => current || nextTeeSets[0]?.id || "");
-      setTeamTournamentId((current) => current || nextTournaments[0]?.id || "");
-      setTeamCaptainId((current) => current || nextPlayers[0]?.id || "");
-      setRosterTeamId((current) => current || nextTeams[0]?.id || "");
-      setRosterPlayerId((current) => current || nextPlayers[0]?.id || "");
     } catch (error) {
       setNotice({
         kind: "error",
@@ -381,111 +366,6 @@ export default function TournamentSetupClient() {
           }}
         >
           Add Tournament
-        </button>
-      </div>
-
-      <div className="grid gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-        <h2 className="font-medium">Create Team</h2>
-        <input
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          placeholder="Team name"
-          value={teamName}
-          onChange={(event) => setTeamName(event.target.value)}
-        />
-        <select
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={teamTournamentId}
-          onChange={(event) => setTeamTournamentId(event.target.value)}
-        >
-          <option value="">Select tournament</option>
-          {tournaments.map((tournament) => (
-            <option key={tournament.id} value={tournament.id}>
-              {tournament.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={teamCaptainId}
-          onChange={(event) => setTeamCaptainId(event.target.value)}
-        >
-          <option value="">Select captain</option>
-          {players.map((player) => (
-            <option key={player.id} value={player.id}>
-              {player.name}
-            </option>
-          ))}
-        </select>
-        <button
-          className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
-          disabled={!teamName.trim() || !teamTournamentId || !teamCaptainId || loading}
-          onClick={async () => {
-            try {
-              const created = await createTeam({
-                name: teamName,
-                tournamentId: teamTournamentId,
-                captainPlayerId: teamCaptainId,
-              });
-              setTeamName("");
-              setNotice({ kind: "success", text: `Created team: ${created.name}` });
-              await refresh();
-            } catch (error) {
-              setNotice({
-                kind: "error",
-                text: error instanceof Error ? error.message : "Failed to create team.",
-              });
-            }
-          }}
-        >
-          Add Team
-        </button>
-      </div>
-
-      <div className="grid gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-        <h2 className="font-medium">Assign Team Player</h2>
-        <select
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={rosterTeamId}
-          onChange={(event) => setRosterTeamId(event.target.value)}
-        >
-          <option value="">Select team</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={rosterPlayerId}
-          onChange={(event) => setRosterPlayerId(event.target.value)}
-        >
-          <option value="">Select player</option>
-          {players.map((player) => (
-            <option key={player.id} value={player.id}>
-              {player.name}
-            </option>
-          ))}
-        </select>
-        <button
-          className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
-          disabled={!rosterTeamId || !rosterPlayerId || loading}
-          onClick={async () => {
-            try {
-              await addTeamPlayer({ teamId: rosterTeamId, playerId: rosterPlayerId });
-              setNotice({ kind: "success", text: "Assigned player to team." });
-            } catch (error) {
-              setNotice({
-                kind: "error",
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : "Failed to assign player to team.",
-              });
-            }
-          }}
-        >
-          Add Player To Team
         </button>
       </div>
 

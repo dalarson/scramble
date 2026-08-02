@@ -128,7 +128,12 @@ function PlayerStatsTab(input: {
             <span className="text-xs font-semibold">{index + 1}</span>
             <div className="flex min-w-0 items-center gap-2">
               <PlayerAvatar name={player.playerName} photoUrl={player.playerPhotoUrl} />
-              <span className="truncate text-sm font-medium">{player.playerName}</span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{player.playerName}</div>
+                <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {player.teamName}
+                </div>
+              </div>
             </div>
             <span className="text-right text-sm font-semibold">{player.beers}</span>
             <span className="text-right text-sm font-semibold">{player.birdieJuice}</span>

@@ -71,7 +71,9 @@ export function buildTournamentSnapshot(input: {
 
     return {
       team,
-      captain: input.playersById.get(team.captainPlayerId) ?? null,
+      captain: team.captainPlayerId
+        ? (input.playersById.get(team.captainPlayerId) ?? null)
+        : null,
       players: input.rostersByTeamId.get(team.id) ?? [],
       currentHole,
       scores,

@@ -14,7 +14,9 @@ export function generateSnakeOrder(
   }
 
   return Array.from({ length: rounds }, (_, roundIndex) => {
-    const isForwardRound = roundIndex % 2 === 0;
+    // Round 0 is the captain round — always forward (T1, T2, T3, …).
+    // From round 1 onward the snake restarts forward (round 1 forward, round 2 backward, …).
+    const isForwardRound = roundIndex === 0 || (roundIndex - 1) % 2 === 0;
     return isForwardRound ? [...teamIds] : [...teamIds].reverse();
   });
 }
@@ -45,11 +47,10 @@ export function getNextSnakePick(input: {
   maxPlayersPerTeam?: number;
 }): DraftPickSummary | null {
   const maxPlayersPerTeam = input.maxPlayersPerTeam ?? MAX_TEAM_PLAYERS;
-  const nonCaptainRounds = maxPlayersPerTeam - 1;
-  const sequence = getSnakePickSequence(input.teamIds, nonCaptainRounds);
+  const sequence = getSnakePickSequence(input.teamIds, maxPlayersPerTeam);
+  // Count all picks across all teams (captain round picks are included at position 1).
   const draftedPickCount = input.teamIds.reduce((total, teamId) => {
-    const draftedPlayers = input.draftedPlayersByTeamId.get(teamId) ?? [];
-    return total + Math.max(draftedPlayers.length - 1, 0);
+    return total + (input.draftedPlayersByTeamId.get(teamId)?.length ?? 0);
   }, 0);
 
   return sequence[draftedPickCount] ?? null;

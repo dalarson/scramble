@@ -49,7 +49,12 @@ function DrinkTable({
                   {row.playerName.charAt(0)}
                 </div>
               )}
-              <span className="truncate text-sm font-medium">{row.playerName}</span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{row.playerName}</div>
+                <div className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {row.teamName}
+                </div>
+              </div>
             </div>
             <div className="text-right text-lg font-semibold">{row[valueKey]}</div>
           </div>

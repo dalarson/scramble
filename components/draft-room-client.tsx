@@ -2,7 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { draftPlayer, getDraftSnapshot, moveTeamDraftOrder, undoLastDraftPick } from "@/services/draft";
+import {
+  createDraftTeam,
+  draftPlayer,
+  getDraftSnapshot,
+  moveTeamDraftOrder,
+  removeDraftPlayer,
+  removeDraftTeam,
+  renameDraftTeam,
+  undoLastDraftPick,
+} from "@/services/draft";
 import {
   createPlayer,
   listTournaments,
@@ -34,6 +43,7 @@ export default function DraftRoomClient() {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerGolfHandicap, setNewPlayerGolfHandicap] = useState("");
   const [newPlayerBeerHandicap, setNewPlayerBeerHandicap] = useState("");
+  const [teamNameDrafts, setTeamNameDrafts] = useState<Record<string, string>>({});
 
   const tournamentsQuery = useQuery({
     queryKey: ["tournaments"],
@@ -52,6 +62,21 @@ export default function DraftRoomClient() {
     enabled: Boolean(effectiveTournamentId),
     staleTime: DRAFT_QUERY_STALE_TIME_MS,
   });
+
+  useEffect(() => {
+    if (!draftQuery.data) {
+      return;
+    }
+
+    setTeamNameDrafts((current) => {
+      const next: Record<string, string> = {};
+      for (const teamSummary of draftQuery.data.teams) {
+        next[teamSummary.team.id] =
+          current[teamSummary.team.id] ?? teamSummary.team.name;
+      }
+      return next;
+    });
+  }, [draftQuery.data]);
 
   async function refreshDraft() {
     if (!effectiveTournamentId) {
@@ -78,18 +103,39 @@ export default function DraftRoomClient() {
     }
   }
 
+  async function handleAddTeam() {
+    const name = window.prompt("Team name");
+    if (!name?.trim() || !draftSnapshot) {
+      return;
+    }
+
+    await runAction(async () => {
+      await createDraftTeam({
+        tournamentId: draftSnapshot.tournament.id,
+        name: name.trim(),
+      });
+      await refreshDraft();
+      setNotice({ kind: "success", text: "Team added." });
+    });
+  }
+
   const draftSnapshot = draftQuery.data ?? null;
   const canReorderTeams =
-    draftSnapshot?.teams.every((team) => team.players.length <= 1) ?? false;
-  const canUndo = draftSnapshot?.teams.some((team) => team.players.length > 1) ?? false;
+    draftSnapshot?.teams.every((team) => team.players.length === 0) ?? false;
+  const canUndo = draftSnapshot?.teams.some((team) => team.players.length > 0) ?? false;
+  const canDraft = Boolean(draftSnapshot?.nextPick) && !busy && !draftSnapshot?.isComplete;
+  const draftBlockedMessage = !draftSnapshot
+    ? null
+    : draftSnapshot.teams.length < 2
+      ? "Add at least two teams to start drafting."
+      : null;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Snake Draft</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">
-          Add players and tune handicaps here, then draft in snake order. Captains
-          stay fixed as roster slot one.
+          Manage teams, players, handicaps, and draft picks here.
         </p>
       </header>
 
@@ -148,15 +194,29 @@ export default function DraftRoomClient() {
                 <div className="mt-1 text-2xl font-semibold">
                   {draftSnapshot.nextPick
                     ? `${draftSnapshot.nextPick.teamName} are on the clock`
-                    : "Draft complete"}
+                    : draftSnapshot.isComplete
+                      ? "Draft complete"
+                      : "Draft not ready"}
                 </div>
                 <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">
                   {draftSnapshot.nextPick
-                    ? `Round ${draftSnapshot.nextPick.round}, pick ${draftSnapshot.nextPick.overallPick}`
-                    : "Every team has a full roster."}
+                    ? draftSnapshot.nextPick.round === 1
+                      ? `Captain round · pick ${draftSnapshot.nextPick.overallPick}`
+                      : `Round ${draftSnapshot.nextPick.round - 1}, pick ${draftSnapshot.nextPick.overallPick}`
+                    : draftSnapshot.isComplete
+                      ? "Every team has a full roster."
+                      : (draftBlockedMessage ?? "Complete setup to begin drafting.")}
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  title="Add team"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-lg font-semibold shadow-sm transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                  disabled={busy || !draftSnapshot}
+                  onClick={() => void handleAddTeam()}
+                >
+                  +
+                </button>
                 <button
                   title="Undo last pick"
                   className="rounded-full border border-zinc-300 px-3 py-2 text-sm shadow-sm transition hover:bg-zinc-50 disabled:opacity-40 dark:border-zinc-700 dark:hover:bg-zinc-900"
@@ -179,108 +239,163 @@ export default function DraftRoomClient() {
           </section>
 
           <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {draftSnapshot.teams.map((teamSummary) => (
-                <div
-                  key={teamSummary.team.id}
-                  className={`rounded-3xl border p-4 shadow-sm ${
-                    draftSnapshot.nextPick?.teamId === teamSummary.team.id
-                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                      : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
+            <div className="grid self-start items-start gap-4 sm:grid-cols-2">
+              {draftSnapshot.teams.map((teamSummary) => {
+                const draftName = teamNameDrafts[teamSummary.team.id] ?? teamSummary.team.name;
+
+                return (
+                  <div
+                    key={teamSummary.team.id}
+                    className={`self-start rounded-3xl border p-4 shadow-sm ${
+                      draftSnapshot.nextPick?.teamId === teamSummary.team.id
+                        ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                        : "border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
                       <div className="text-xs uppercase tracking-wide opacity-70">
                         Draft order #{teamSummary.team.draftOrder}
                       </div>
-                      <h2 className="mt-1 text-lg font-semibold">
-                        {teamSummary.team.name}
-                      </h2>
-                      <div className="mt-1 text-sm opacity-80">
-                        Captain: {teamSummary.captain?.name ?? "Unknown"}
+                      <div className="flex items-center gap-1">
+                        {canReorderTeams ? (
+                          <>
+                            <button
+                              className="rounded-full border px-2 py-1 text-[10px] shadow-sm disabled:opacity-40"
+                              disabled={busy || teamSummary.team.draftOrder === 1}
+                              onClick={() =>
+                                void runAction(async () => {
+                                  await moveTeamDraftOrder({
+                                    tournamentId: draftSnapshot.tournament.id,
+                                    teamId: teamSummary.team.id,
+                                    direction: "up",
+                                  });
+                                  await refreshDraft();
+                                  setNotice({
+                                    kind: "success",
+                                    text: `Moved ${teamSummary.team.name} earlier in the draft order.`,
+                                  });
+                                })
+                              }
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="rounded-full border px-2 py-1 text-[10px] shadow-sm disabled:opacity-40"
+                              disabled={
+                                busy ||
+                                teamSummary.team.draftOrder === draftSnapshot.teams.length
+                              }
+                              onClick={() =>
+                                void runAction(async () => {
+                                  await moveTeamDraftOrder({
+                                    tournamentId: draftSnapshot.tournament.id,
+                                    teamId: teamSummary.team.id,
+                                    direction: "down",
+                                  });
+                                  await refreshDraft();
+                                  setNotice({
+                                    kind: "success",
+                                    text: `Moved ${teamSummary.team.name} later in the draft order.`,
+                                  });
+                                })
+                              }
+                            >
+                              ↓
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          className="rounded-full border border-red-300 px-2 py-1 text-[10px] font-semibold text-red-700 shadow-sm disabled:opacity-40 dark:border-red-600 dark:text-red-300"
+                          disabled={busy || !canReorderTeams}
+                          onClick={() =>
+                            void runAction(async () => {
+                              await removeDraftTeam({
+                                tournamentId: draftSnapshot.tournament.id,
+                                teamId: teamSummary.team.id,
+                              });
+                              await refreshDraft();
+                              setNotice({ kind: "success", text: "Team removed." });
+                            })
+                          }
+                        >
+                          ×
+                        </button>
                       </div>
                     </div>
-                    {canReorderTeams ? (
-                      <div className="flex gap-2">
-                        <button
-                          className="rounded-full border px-3 py-2 text-xs shadow-sm disabled:opacity-40"
-                          disabled={busy || teamSummary.team.draftOrder === 1}
-                          onClick={() =>
-                            void runAction(async () => {
-                              await moveTeamDraftOrder({
-                                tournamentId: draftSnapshot.tournament.id,
-                                teamId: teamSummary.team.id,
-                                direction: "up",
-                              });
-                              await refreshDraft();
-                              setNotice({
-                                kind: "success",
-                                text: `Moved ${teamSummary.team.name} earlier in the draft order.`,
-                              });
-                            })
-                          }
-                        >
-                          ↑
-                        </button>
-                        <button
-                          className="rounded-full border px-3 py-2 text-xs shadow-sm disabled:opacity-40"
-                          disabled={
-                            busy ||
-                            teamSummary.team.draftOrder === draftSnapshot.teams.length
-                          }
-                          onClick={() =>
-                            void runAction(async () => {
-                              await moveTeamDraftOrder({
-                                tournamentId: draftSnapshot.tournament.id,
-                                teamId: teamSummary.team.id,
-                                direction: "down",
-                              });
-                              await refreshDraft();
-                              setNotice({
-                                kind: "success",
-                                text: `Moved ${teamSummary.team.name} later in the draft order.`,
-                              });
-                            })
-                          }
-                        >
-                          ↓
-                        </button>
+
+                    <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        className="rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                        value={draftName}
+                        onChange={(event) =>
+                          setTeamNameDrafts((current) => ({
+                            ...current,
+                            [teamSummary.team.id]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="rounded-lg border border-zinc-300 px-3 py-2 text-xs font-medium shadow-sm disabled:opacity-40 dark:border-zinc-600"
+                        disabled={busy || !draftName.trim() || draftName.trim() === teamSummary.team.name}
+                        onClick={() =>
+                          void runAction(async () => {
+                            await renameDraftTeam({
+                              teamId: teamSummary.team.id,
+                              name: draftName,
+                            });
+                            await refreshDraft();
+                            setNotice({ kind: "success", text: "Team renamed." });
+                          })
+                        }
+                      >
+                        Save name
+                      </button>
+                    </div>
+
+                    <div className="mt-2 text-xs opacity-70">
+                      {teamSummary.captain
+                        ? `Captain: ${teamSummary.captain.name}`
+                        : "First draft pick becomes captain."}
+                    </div>
+
+                    {!canReorderTeams ? (
+                      <div className="mt-2 text-xs opacity-70">
+                        Team order locks after the first pick.
                       </div>
                     ) : null}
-                  </div>
 
-                  <div className="mt-4 space-y-2">
-                    {teamSummary.players.map((player) => (
-                      <DraftedPlayerRow
-                        key={`${teamSummary.team.id}-${player.playerId}`}
-                        player={player}
-                      />
-                    ))}
-                    {Array.from({
-                      length: Math.max(
-                        draftSnapshot.maxPlayersPerTeam - teamSummary.players.length,
-                        0,
-                      ),
-                    }).map((_, index) => (
-                      <div
-                        key={`open-slot-${teamSummary.team.id}-${index}`}
-                        className="rounded-2xl border border-dashed border-current/25 px-3 py-3 text-sm opacity-60"
-                      >
-                        Open roster slot
-                      </div>
-                    ))}
+                    <div className="mt-4 space-y-2">
+                      {teamSummary.players.map((player) => (
+                        <DraftedPlayerRow
+                          key={`${teamSummary.team.id}-${player.playerId}`}
+                          player={player}
+                        />
+                      ))}
+                      {Array.from({
+                        length: Math.max(
+                          draftSnapshot.maxPlayersPerTeam - teamSummary.players.length,
+                          0,
+                        ),
+                      }).map((_, index) => (
+                        <div
+                          key={`open-slot-${teamSummary.team.id}-${index}`}
+                          className="rounded-2xl border border-dashed border-current/25 px-3 py-3 text-sm opacity-60"
+                        >
+                          Open roster slot
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            <aside className="flex min-h-0 flex-col rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
+            <aside className="flex flex-col rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 lg:overflow-hidden">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">Available players</h2>
                   <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                    Add players and adjust handicaps before or during the draft.
+                    Create, remove, edit handicaps, then draft.
                   </p>
                 </div>
                 <div className="rounded-2xl bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-900">
@@ -334,6 +449,7 @@ export default function DraftRoomClient() {
                         onClick={() =>
                           void runAction(async () => {
                             const created = await createPlayer({
+                              tournamentId: draftSnapshot.tournament.id,
                               name: newPlayerName,
                               golfHandicap: toNumberOrUndefined(newPlayerGolfHandicap),
                               beerHandicap: toNumberOrUndefined(newPlayerBeerHandicap),
@@ -357,68 +473,77 @@ export default function DraftRoomClient() {
                 )}
               </div>
 
-              <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1">
-                {draftSnapshot.availablePlayers.map((player) => {
-                  const canDraft =
-                    Boolean(draftSnapshot.nextPick) &&
-                    !busy &&
-                    !draftSnapshot.isComplete;
-
-                  return (
-                    <div
-                      key={player.id}
-                      className="rounded-2xl border border-zinc-200 px-3 py-3 shadow-sm dark:border-zinc-700"
+              <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+                {draftSnapshot.availablePlayers.map((player) => (
+                  <div
+                    key={player.id}
+                    className="relative rounded-2xl border border-zinc-200 px-3 py-3 shadow-sm dark:border-zinc-700"
+                  >
+                    <button
+                      className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-40 dark:text-red-300 dark:hover:bg-red-950/40"
+                      disabled={busy}
+                      onClick={() =>
+                        void runAction(async () => {
+                          await removeDraftPlayer(player.id);
+                          await refreshDraft();
+                          setNotice({
+                            kind: "success",
+                            text: `${player.name} removed from player pool.`,
+                          });
+                        })
+                      }
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="min-w-0 flex-1">
-                          <PlayerCardContent player={player} />
-                        </div>
-                        <button
-                          className="rounded-xl border border-zinc-300 px-3 py-2 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600"
-                          disabled={!canDraft}
-                          onClick={() =>
-                            void runAction(async () => {
-                              if (!draftSnapshot.nextPick) {
-                                return;
-                              }
-
-                              await draftPlayer({
-                                tournamentId: draftSnapshot.tournament.id,
-                                teamId: draftSnapshot.nextPick.teamId,
-                                playerId: player.id,
-                              });
-                              await refreshDraft();
-                              setNotice({
-                                kind: "success",
-                                text: `${player.name} drafted by ${draftSnapshot.nextPick.teamName}.`,
-                              });
-                            })
-                          }
-                        >
-                          Draft
-                        </button>
+                      ×
+                    </button>
+                    <div className="flex items-start gap-3">
+                      <div className="min-w-0 flex-1">
+                        <PlayerCardContent player={player} />
                       </div>
-                      <EditableHandicapRow
-                        busy={busy}
-                        player={player}
-                        onSave={(golfHandicap, beerHandicap) =>
-                          runAction(async () => {
-                            await updatePlayerHandicaps({
+                      <button
+                        className="rounded-xl border border-zinc-300 px-3 py-2 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600"
+                        disabled={!canDraft}
+                        onClick={() =>
+                          void runAction(async () => {
+                            if (!draftSnapshot.nextPick) {
+                              return;
+                            }
+
+                            await draftPlayer({
+                              tournamentId: draftSnapshot.tournament.id,
+                              teamId: draftSnapshot.nextPick.teamId,
                               playerId: player.id,
-                              golfHandicap,
-                              beerHandicap,
                             });
                             await refreshDraft();
                             setNotice({
                               kind: "success",
-                              text: `Updated handicaps for ${player.name}.`,
+                              text: `${player.name} drafted by ${draftSnapshot.nextPick.teamName}.`,
                             });
                           })
                         }
-                      />
+                      >
+                        Draft
+                      </button>
                     </div>
-                  );
-                })}
+                    <EditableHandicapRow
+                      busy={busy}
+                      player={player}
+                      onSave={(golfHandicap, beerHandicap) =>
+                        runAction(async () => {
+                          await updatePlayerHandicaps({
+                            playerId: player.id,
+                            golfHandicap,
+                            beerHandicap,
+                          });
+                          await refreshDraft();
+                          setNotice({
+                            kind: "success",
+                            text: `Updated handicaps for ${player.name}.`,
+                          });
+                        })
+                      }
+                    />
+                  </div>
+                ))}
 
                 {draftSnapshot.availablePlayers.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-zinc-300 px-4 py-5 text-sm text-zinc-500 dark:border-zinc-700">
@@ -443,7 +568,7 @@ function DraftedPlayerRow({ player }: { player: TeamRosterEntry }) {
         <div className="text-xs opacity-70">
           {player.draftPosition === 1
             ? "Captain"
-            : `Draft pick #${player.draftPosition - 1}`}
+            : `Pick #${player.draftPosition - 1}`}
         </div>
       </div>
     </div>

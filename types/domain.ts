@@ -50,7 +50,7 @@ export interface Team {
   id: string;
   tournamentId: string;
   name: string;
-  captainPlayerId: string;
+  captainPlayerId: string | null;
   accessToken: string;
   draftOrder: number;
 }

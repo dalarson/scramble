@@ -7,8 +7,8 @@ export default function TournamentPage() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Tournament Hub</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">
-          Configure courses, tee sets, holes, tournaments, and teams here. Player
-          entry and handicap edits happen in the Draft room.
+          Configure courses, tee sets, holes, and tournaments here. Team, captain,
+          and player setup happens in the Draft room.
         </p>
       </header>
 

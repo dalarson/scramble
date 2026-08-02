@@ -4,7 +4,7 @@ import type { TournamentSnapshot } from "@/types/live";
 export function computePlayerDrinkStats(snapshot: TournamentSnapshot): PlayerDrinkStats[] {
   const playerMap = new Map<
     string,
-    { name: string; photoUrl: string | null; beers: number; juice: number }
+    { name: string; teamName: string; photoUrl: string | null; beers: number; juice: number }
   >();
 
   for (const teamSummary of snapshot.teams) {
@@ -12,6 +12,7 @@ export function computePlayerDrinkStats(snapshot: TournamentSnapshot): PlayerDri
       if (!playerMap.has(rosterEntry.playerId)) {
         playerMap.set(rosterEntry.playerId, {
           name: rosterEntry.playerName,
+          teamName: teamSummary.team.name,
           photoUrl: rosterEntry.playerPhotoUrl,
           beers: 0,
           juice: 0,
@@ -36,6 +37,7 @@ export function computePlayerDrinkStats(snapshot: TournamentSnapshot): PlayerDri
     .map(([playerId, stats]) => ({
       playerId,
       playerName: stats.name,
+      teamName: stats.teamName,
       playerPhotoUrl: stats.photoUrl,
       beers: stats.beers,
       birdieJuice: stats.juice,

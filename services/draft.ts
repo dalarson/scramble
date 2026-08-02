@@ -1,7 +1,7 @@
 import { getNextSnakePick, getSnakePickSequence, MAX_TEAM_PLAYERS } from "@/lib/draft";
 import { getSupabaseClient } from "@/lib/supabase";
 import { addTeamPlayer, listTeams } from "@/services/liveTournament";
-import { listPlayers, listTournaments } from "@/services/tournamentSetup";
+import { createTeam, listPlayers, listTournaments } from "@/services/tournamentSetup";
 import type {
   DraftSnapshot,
   TeamPlayer,
@@ -26,50 +26,11 @@ async function getTournamentById(tournamentId: string): Promise<Tournament> {
   return tournament;
 }
 
-async function ensureCaptainsPersisted(input: {
-  tournamentId: string;
-  teamIds: string[];
-}): Promise<void> {
-  const supabase = getSupabaseClient();
-  const teams = await listTeams(input.tournamentId);
-  const { data: teamPlayerRows, error } = await supabase
-    .from("team_players")
-    .select("team_id,player_id,draft_position")
-    .in("team_id", input.teamIds);
-
-  if (error) {
-    throw new Error(`Failed to load draft rosters: ${error.message}`);
-  }
-
-  const existingRows = (teamPlayerRows ?? []) as TeamPlayerRow[];
-  const missingCaptainRows = teams
-    .filter(
-      (team) =>
-        !existingRows.some(
-          (row) =>
-            row.team_id === team.id && row.player_id === team.captainPlayerId,
-        ),
-    )
-    .map((team) => ({
-      team_id: team.id,
-      player_id: team.captainPlayerId,
-      draft_position: 1,
-    }));
-
-  if (missingCaptainRows.length === 0) {
-    return;
-  }
-
-  const { error: insertError } = await supabase
-    .from("team_players")
-    .insert(missingCaptainRows);
-
-  if (insertError) {
-    throw new Error(`Failed to persist captains in draft rosters: ${insertError.message}`);
-  }
-}
-
 async function loadTournamentTeamPlayers(teamIds: string[]): Promise<TeamPlayerRow[]> {
+  if (teamIds.length === 0) {
+    return [];
+  }
+
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("team_players")
@@ -84,21 +45,21 @@ async function loadTournamentTeamPlayers(teamIds: string[]): Promise<TeamPlayerR
   return (data ?? []) as TeamPlayerRow[];
 }
 
+async function assertNoStartedDraftPicks(tournamentId: string, message: string): Promise<void> {
+  const teams = await listTeams(tournamentId);
+  const teamIds = teams.map((team) => team.id);
+  const teamPlayers = await loadTournamentTeamPlayers(teamIds);
+  if (teamPlayers.length > 0) {
+    throw new Error(message);
+  }
+}
+
 export async function getDraftSnapshot(tournamentId: string): Promise<DraftSnapshot> {
   const [tournament, teams, players] = await Promise.all([
     getTournamentById(tournamentId),
     listTeams(tournamentId),
-    listPlayers(),
+    listPlayers(tournamentId),
   ]);
-
-  if (teams.length < 2) {
-    throw new Error("Create at least two teams before starting the snake draft.");
-  }
-
-  await ensureCaptainsPersisted({
-    tournamentId,
-    teamIds: teams.map((team) => team.id),
-  });
 
   const teamPlayerRows = await loadTournamentTeamPlayers(teams.map((team) => team.id));
   const playersById = new Map(players.map((player) => [player.id, player]));
@@ -131,17 +92,23 @@ export async function getDraftSnapshot(tournamentId: string): Promise<DraftSnaps
     draftedPlayersByTeamId.set(row.team_id, draftedPlayers);
   }
 
-  const nextPick = getNextSnakePick({
-    teamIds: teams.map((team) => team.id),
-    draftedPlayersByTeamId,
-    maxPlayersPerTeam: MAX_TEAM_PLAYERS,
-  });
+  const hasEnoughTeams = teams.length >= 2;
+  const canRunDraft = hasEnoughTeams;
+  const nextPick = canRunDraft
+    ? getNextSnakePick({
+        teamIds: teams.map((team) => team.id),
+        draftedPlayersByTeamId,
+        maxPlayersPerTeam: MAX_TEAM_PLAYERS,
+      })
+    : null;
 
   return {
     tournament,
     teams: teams.map((team) => ({
       team,
-      captain: playersById.get(team.captainPlayerId) ?? null,
+      captain: team.captainPlayerId
+        ? (playersById.get(team.captainPlayerId) ?? null)
+        : null,
       players: rostersByTeamId.get(team.id) ?? [],
     })),
     availablePlayers: players.filter((player) => !draftedPlayerIds.has(player.id)),
@@ -152,7 +119,7 @@ export async function getDraftSnapshot(tournamentId: string): Promise<DraftSnaps
         }
       : null,
     maxPlayersPerTeam: MAX_TEAM_PLAYERS,
-    isComplete: nextPick === null,
+    isComplete: canRunDraft && nextPick === null,
   };
 }
 
@@ -164,6 +131,9 @@ export async function draftPlayer(input: {
   const snapshot = await getDraftSnapshot(input.tournamentId);
 
   if (!snapshot.nextPick) {
+    if (snapshot.teams.length < 2) {
+      throw new Error("Create at least two teams before starting the draft.");
+    }
     throw new Error("This draft is already complete.");
   }
   if (snapshot.nextPick.teamId !== input.teamId) {
@@ -233,48 +203,118 @@ export async function moveTeamDraftOrder(input: {
   }
 }
 
+export async function createDraftTeam(input: {
+  tournamentId: string;
+  name: string;
+}): Promise<void> {
+  await createTeam({
+    tournamentId: input.tournamentId,
+    name: input.name,
+  });
+}
+
+export async function renameDraftTeam(input: {
+  teamId: string;
+  name: string;
+}): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("teams")
+    .update({ name: input.name.trim() })
+    .eq("id", input.teamId);
+
+  if (error) {
+    throw new Error(`Failed to rename team: ${error.message}`);
+  }
+}
+
+export async function removeDraftTeam(input: {
+  tournamentId: string;
+  teamId: string;
+}): Promise<void> {
+  await assertNoStartedDraftPicks(
+    input.tournamentId,
+    "Undo drafted picks before removing teams.",
+  );
+
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from("teams").delete().eq("id", input.teamId);
+  if (error) {
+    throw new Error(`Failed to remove team: ${error.message}`);
+  }
+}
+
+export async function removeDraftPlayer(playerId: string): Promise<void> {
+  const supabase = getSupabaseClient();
+  const { data: teamRows, error: teamRowsError } = await supabase
+    .from("team_players")
+    .select("team_id")
+    .eq("player_id", playerId)
+    .limit(1);
+
+  if (teamRowsError) {
+    throw new Error(`Failed to validate player usage: ${teamRowsError.message}`);
+  }
+  if ((teamRows ?? []).length > 0) {
+    throw new Error("Remove this player from team rosters before deleting.");
+  }
+
+  const { data: captainRows, error: captainRowsError } = await supabase
+    .from("teams")
+    .select("id")
+    .eq("captain_player_id", playerId)
+    .limit(1);
+
+  if (captainRowsError) {
+    throw new Error(`Failed to validate captain assignments: ${captainRowsError.message}`);
+  }
+  if ((captainRows ?? []).length > 0) {
+    throw new Error("Unassign this player as captain before deleting.");
+  }
+
+  const { error: deleteError } = await supabase.from("players").delete().eq("id", playerId);
+  if (deleteError) {
+    throw new Error(`Failed to remove player: ${deleteError.message}`);
+  }
+}
+
 export async function undoLastDraftPick(tournamentId: string): Promise<void> {
   const supabase = getSupabaseClient();
   const teams = await listTeams(tournamentId);
   const teamIds = teams.map((team) => team.id);
   const teamPlayerRows = await loadTournamentTeamPlayers(teamIds);
 
-  // Collect non-captain picks (draft_position > 1) per team
-  const nonCaptainsByTeamId = new Map<
+  const picksByTeamId = new Map<
     string,
     { teamId: string; playerId: string; draftPosition: number }[]
   >();
   for (const row of teamPlayerRows) {
-    if (row.draft_position > 1) {
-      const picks = nonCaptainsByTeamId.get(row.team_id) ?? [];
-      picks.push({
-        teamId: row.team_id,
-        playerId: row.player_id,
-        draftPosition: row.draft_position,
-      });
-      nonCaptainsByTeamId.set(row.team_id, picks);
-    }
+    const picks = picksByTeamId.get(row.team_id) ?? [];
+    picks.push({
+      teamId: row.team_id,
+      playerId: row.player_id,
+      draftPosition: row.draft_position,
+    });
+    picksByTeamId.set(row.team_id, picks);
   }
 
-  const totalNonCaptainPicks = teamIds.reduce(
-    (sum, teamId) => sum + (nonCaptainsByTeamId.get(teamId)?.length ?? 0),
+  const totalPicks = teamIds.reduce(
+    (sum, teamId) => sum + (picksByTeamId.get(teamId)?.length ?? 0),
     0,
   );
 
-  if (totalNonCaptainPicks === 0) {
+  if (totalPicks === 0) {
     throw new Error("There are no picks to undo.");
   }
 
-  // Determine which team made the last pick using the deterministic snake sequence
-  const sequence = getSnakePickSequence(teamIds, MAX_TEAM_PLAYERS - 1);
-  const lastPickSummary = sequence[totalNonCaptainPicks - 1];
+  const sequence = getSnakePickSequence(teamIds, MAX_TEAM_PLAYERS);
+  const lastPickSummary = sequence[totalPicks - 1];
 
   if (!lastPickSummary) {
     throw new Error("Could not determine the last pick to undo.");
   }
 
-  // Find that team's highest-position (most recent) non-captain pick
-  const teamPicks = (nonCaptainsByTeamId.get(lastPickSummary.teamId) ?? []).sort(
+  const teamPicks = (picksByTeamId.get(lastPickSummary.teamId) ?? []).sort(
     (a, b) => b.draftPosition - a.draftPosition,
   );
   const lastPick = teamPicks[0];
@@ -291,5 +331,16 @@ export async function undoLastDraftPick(tournamentId: string): Promise<void> {
 
   if (error) {
     throw new Error(`Failed to undo last pick: ${error.message}`);
+  }
+
+  if (lastPick.draftPosition === 1) {
+    const { error: clearCaptainError } = await supabase
+      .from("teams")
+      .update({ captain_player_id: null })
+      .eq("id", lastPick.teamId);
+
+    if (clearCaptainError) {
+      throw new Error(`Failed to clear captain assignment: ${clearCaptainError.message}`);
+    }
   }
 }

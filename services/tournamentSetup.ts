@@ -49,7 +49,7 @@ type TeamRow = {
   id: string;
   tournament_id: string;
   name: string;
-  captain_player_id: string;
+  captain_player_id: string | null;
   access_token: string;
   draft_order: number;
 };
@@ -224,11 +224,12 @@ export async function createHole(input: {
   return mapHole(data as HoleRow);
 }
 
-export async function listPlayers(): Promise<Player[]> {
+export async function listPlayers(tournamentId: string): Promise<Player[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("players")
     .select("id,name,golf_handicap,beer_handicap,photo_url")
+    .eq("tournament_id", tournamentId)
     .order("name", { ascending: true });
 
   if (error) {
@@ -239,6 +240,7 @@ export async function listPlayers(): Promise<Player[]> {
 }
 
 export async function createPlayer(input: {
+  tournamentId: string;
   name: string;
   golfHandicap?: number;
   beerHandicap?: number;
@@ -248,6 +250,7 @@ export async function createPlayer(input: {
   const { data, error } = await supabase
     .from("players")
     .insert({
+      tournament_id: input.tournamentId,
       name: input.name.trim(),
       golf_handicap: input.golfHandicap ?? null,
       beer_handicap: input.beerHandicap ?? null,
@@ -337,7 +340,7 @@ export async function createTournament(input: {
 export async function createTeam(input: {
   tournamentId: string;
   name: string;
-  captainPlayerId: string;
+  captainPlayerId?: string;
 }): Promise<Team> {
   const supabase = getSupabaseClient();
   const { data: existingTeams, error: existingTeamsError } = await supabase
@@ -357,7 +360,7 @@ export async function createTeam(input: {
     .insert({
       tournament_id: input.tournamentId,
       name: input.name.trim(),
-      captain_player_id: input.captainPlayerId,
+      captain_player_id: input.captainPlayerId ?? null,
       draft_order: nextDraftOrder,
     })
     .select("id,tournament_id,name,captain_player_id,access_token,draft_order")
@@ -368,17 +371,19 @@ export async function createTeam(input: {
   }
 
   const createdTeam = mapTeam(data as TeamRow);
-  const { error: captainAssignmentError } = await supabase.from("team_players").insert({
-    team_id: createdTeam.id,
-    player_id: createdTeam.captainPlayerId,
-    draft_position: 1,
-  });
+  if (createdTeam.captainPlayerId) {
+    const { error: captainAssignmentError } = await supabase.from("team_players").insert({
+      team_id: createdTeam.id,
+      player_id: createdTeam.captainPlayerId,
+      draft_position: 1,
+    });
 
-  if (captainAssignmentError) {
-    await supabase.from("teams").delete().eq("id", createdTeam.id);
-    throw new Error(
-      `Failed to add captain to team roster: ${captainAssignmentError.message}`,
-    );
+    if (captainAssignmentError) {
+      await supabase.from("teams").delete().eq("id", createdTeam.id);
+      throw new Error(
+        `Failed to add captain to team roster: ${captainAssignmentError.message}`,
+      );
+    }
   }
 
   return createdTeam;

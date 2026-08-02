@@ -35,7 +35,7 @@ type TeamRow = {
   id: string;
   tournament_id: string;
   name: string;
-  captain_player_id: string;
+  captain_player_id: string | null;
   access_token: string;
   draft_order: number;
 };
@@ -165,7 +165,7 @@ export async function addTeamPlayer(input: {
   const supabase = getSupabaseClient();
   const { data: teamRow, error: teamError } = await supabase
     .from("teams")
-    .select("tournament_id")
+    .select("tournament_id,captain_player_id")
     .eq("id", input.teamId)
     .single();
 
@@ -231,6 +231,17 @@ export async function addTeamPlayer(input: {
     throw new Error(
       `Failed to assign player to team: ${error?.message ?? "Unknown error"}`,
     );
+  }
+
+  if (!teamRow.captain_player_id && nextDraftPosition === 1) {
+    const { error: captainError } = await supabase
+      .from("teams")
+      .update({ captain_player_id: input.playerId })
+      .eq("id", input.teamId);
+
+    if (captainError) {
+      throw new Error(`Failed to assign team captain: ${captainError.message}`);
+    }
   }
 
   return {
@@ -384,7 +395,9 @@ export async function getTournamentSnapshot(
   ]);
 
   const teamIds = teams.map((team) => team.id);
-  const captainIds = teams.map((team) => team.captainPlayerId);
+  const captainIds = teams
+    .map((team) => team.captainPlayerId)
+    .filter((captainPlayerId): captainPlayerId is string => captainPlayerId !== null);
 
   const [teamPlayerRowsResult, playerRowsResult, holeScoresResult, beerEventsResult] =
     await Promise.all([
@@ -481,6 +494,9 @@ export async function getTournamentSnapshot(
   }
 
   for (const team of teams) {
+    if (!team.captainPlayerId) {
+      continue;
+    }
     const captain = playersById.get(team.captainPlayerId);
     if (captain && !rostersByTeamId.has(team.id)) {
       rostersByTeamId.set(team.id, [
