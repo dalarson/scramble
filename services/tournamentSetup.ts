@@ -263,6 +263,31 @@ export async function createPlayer(input: {
   return mapPlayer(data as PlayerRow);
 }
 
+export async function updatePlayerHandicaps(input: {
+  playerId: string;
+  golfHandicap?: number;
+  beerHandicap?: number;
+}): Promise<Player> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("players")
+    .update({
+      golf_handicap: input.golfHandicap ?? null,
+      beer_handicap: input.beerHandicap ?? null,
+    })
+    .eq("id", input.playerId)
+    .select("id,name,golf_handicap,beer_handicap,photo_url")
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Failed to update player handicaps: ${error?.message ?? "Unknown error"}`,
+    );
+  }
+
+  return mapPlayer(data as PlayerRow);
+}
+
 export async function listTournaments(): Promise<Tournament[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase

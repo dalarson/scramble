@@ -13,3 +13,11 @@ export function formatThruLabel(holesPlayed: number): string {
 
   return `(Thru ${holesPlayed})`;
 }
+
+export function formatGolfScoreWithToPar(
+  golfScore: number,
+  parPlayed: number,
+): string {
+  const diff = golfScore - parPlayed;
+  return `${golfScore} (${formatToParScore(diff)})`;
+}

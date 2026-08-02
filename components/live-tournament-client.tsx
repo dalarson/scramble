@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { formatThruLabel, formatToParScore } from "@/lib/scoreDisplay";
+import {
+  formatGolfScoreWithToPar,
+  formatThruLabel,
+  formatToParScore,
+} from "@/lib/scoreDisplay";
 import { useTournamentSnapshot } from "@/hooks/use-tournament-snapshot";
 import {
   logBeerEvent,
@@ -271,41 +275,34 @@ export default function LiveTournamentClient(input: {
                   {snapshot.tournament.name}
                 </p>
                 <h2 className="truncate text-lg font-semibold">{selectedTeam.team.name}</h2>
-                <p className="text-xs opacity-75">{formatThruLabel(selectedTeam.holesPlayed)}</p>
+                <p className="text-xs opacity-75">
+                  {selectedTeam.holesPlayed} holes played
+                </p>
               </div>
               <div className="text-right">
                 <div className="text-4xl font-semibold">
                   {formatToParScore(selectedTeam.toParScore)}
                 </div>
                 <div className="text-[10px] uppercase tracking-wide opacity-70">
-                  To par
+                  Team score (to par)
                 </div>
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-[1fr_auto] gap-3 rounded-2xl bg-white/8 p-3 dark:bg-black/8">
-              <div>
-                <div className="text-[10px] uppercase tracking-wide opacity-70">Current hole</div>
-                <div className="mt-1 text-xl font-semibold">
-                  {selectedTeam.currentHole ? `Hole ${selectedTeam.currentHole.number}` : "Finished"}
-                </div>
-                <div className="mt-1 text-xs opacity-80">
-                  {selectedTeam.currentHole
-                    ? `Par ${selectedTeam.currentHole.par} · ${
-                        selectedTeam.currentHole.yardage
-                          ? `${selectedTeam.currentHole.yardage} yards`
-                          : "Distance TBD"
-                      }`
-                    : "All holes scored"}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <TileStat label="Beers" value={selectedTeam.beerBonus} />
-                <TileStat label="Birdies" value={selectedTeam.birdies} />
-                <TileStat label="Juices" value={selectedTeam.birdieJuice} />
-                <TileStat label="Debt" value={selectedTeam.birdieDebt} />
-              </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-white/8 p-3 text-center dark:bg-black/8">
+              <SummaryStat
+                label="Golf"
+                value={formatGolfScoreWithToPar(
+                  selectedTeam.grossScore,
+                  selectedTeam.parPlayed,
+                )}
+              />
+              <SummaryStat label="Beer bonus" value={`-${selectedTeam.beerBonus}`} />
+              <SummaryStat
+                danger={selectedTeam.birdieDebt > 0}
+                label="Birdie debt"
+                value={selectedTeam.birdieDebt.toString()}
+              />
             </div>
           </section>
 
@@ -482,11 +479,17 @@ export default function LiveTournamentClient(input: {
   );
 }
 
-function TileStat({ label, value }: { label: string; value: number }) {
+function SummaryStat(input: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
   return (
     <div className="rounded-2xl bg-white/8 px-2 py-2 dark:bg-black/8">
-      <div className="text-[10px] uppercase tracking-wide opacity-70">{label}</div>
-      <div className="mt-0.5 text-sm font-semibold">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide opacity-70">{input.label}</div>
+      <div className={`mt-0.5 text-sm font-semibold ${input.danger ? "text-red-300 dark:text-red-700" : ""}`}>
+        {input.value}
+      </div>
     </div>
   );
 }

@@ -78,7 +78,7 @@ export default function HistoryClient() {
                   </span>
                 </div>
                 {isViewable ? (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="mt-3 grid grid-cols-3 gap-2">
                     <Link
                       href={`/tournament/${tournament.id}/leaderboard`}
                       className="rounded-xl border border-zinc-200 py-2 text-center text-xs font-medium dark:border-zinc-700"
@@ -91,8 +91,23 @@ export default function HistoryClient() {
                     >
                       Player Stats
                     </Link>
+                    <Link
+                      href={`/tournament/${tournament.id}/review`}
+                      className="rounded-xl border border-zinc-200 py-2 text-center text-xs font-medium dark:border-zinc-700"
+                    >
+                      Summary
+                    </Link>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="mt-3">
+                    <Link
+                      href={`/tournament/${tournament.id}/review`}
+                      className="rounded-xl border border-zinc-200 px-3 py-2 text-center text-xs font-medium dark:border-zinc-700"
+                    >
+                      Summary
+                    </Link>
+                  </div>
+                )}
               </div>
             );
           })}

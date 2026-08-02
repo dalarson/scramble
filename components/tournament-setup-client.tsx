@@ -7,7 +7,6 @@ import { addTeamPlayer, listTeams } from "@/services/liveTournament";
 import {
   createCourse,
   createHole,
-  createPlayer,
   createTeam,
   createTeeSet,
   createTournament,
@@ -53,11 +52,6 @@ export default function TournamentSetupClient() {
   const [holePar, setHolePar] = useState("4");
   const [holeYardage, setHoleYardage] = useState("");
   const [holeHandicap, setHoleHandicap] = useState("");
-
-  const [playerName, setPlayerName] = useState("");
-  const [playerGolfHandicap, setPlayerGolfHandicap] = useState("");
-  const [playerBeerHandicap, setPlayerBeerHandicap] = useState("");
-  const [playerPhotoUrl, setPlayerPhotoUrl] = useState("");
 
   const [tournamentName, setTournamentName] = useState("");
   const [tournamentDate, setTournamentDate] = useState("");
@@ -317,62 +311,6 @@ export default function TournamentSetupClient() {
       </div>
 
       <div className="grid gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
-        <h2 className="font-medium">Add Player</h2>
-        <input
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          placeholder="Player name"
-          value={playerName}
-          onChange={(event) => setPlayerName(event.target.value)}
-        />
-        <input
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          placeholder="Golf handicap (optional)"
-          value={playerGolfHandicap}
-          onChange={(event) => setPlayerGolfHandicap(event.target.value)}
-        />
-        <input
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          placeholder="Beer handicap (optional)"
-          value={playerBeerHandicap}
-          onChange={(event) => setPlayerBeerHandicap(event.target.value)}
-        />
-        <input
-          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          placeholder="Photo URL (optional)"
-          type="url"
-          value={playerPhotoUrl}
-          onChange={(event) => setPlayerPhotoUrl(event.target.value)}
-        />
-        <button
-          className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
-          disabled={!playerName.trim() || loading}
-          onClick={async () => {
-            try {
-              const created = await createPlayer({
-                name: playerName,
-                golfHandicap: toNumberOrUndefined(playerGolfHandicap),
-                beerHandicap: toNumberOrUndefined(playerBeerHandicap),
-                photoUrl: playerPhotoUrl || undefined,
-              });
-              setPlayerName("");
-              setPlayerGolfHandicap("");
-              setPlayerBeerHandicap("");
-              setPlayerPhotoUrl("");
-              setNotice({ kind: "success", text: `Created player: ${created.name}` });
-              await refresh();
-            } catch (error) {
-              setNotice({
-                kind: "error",
-                text: error instanceof Error ? error.message : "Failed to create player.",
-              });
-            }
-          }}
-        >
-          Add Player
-        </button>
-      </div>
-
-      <div className="grid gap-2 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
         <h2 className="font-medium">Create Tournament</h2>
         <input
           className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
@@ -582,7 +520,7 @@ export default function TournamentSetupClient() {
                       {tournament?.name ?? "Tournament"}
                     </div>
                     <div className="mt-2 break-all rounded bg-zinc-100 px-2 py-1.5 text-[10px] dark:bg-zinc-900">
-                      {path}
+                      {fullUrl}
                     </div>
                   </div>
                   <button

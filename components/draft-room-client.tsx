@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { draftPlayer, getDraftSnapshot, moveTeamDraftOrder, undoLastDraftPick } from "@/services/draft";
-import { listTournaments } from "@/services/tournamentSetup";
+import {
+  createPlayer,
+  listTournaments,
+  updatePlayerHandicaps,
+} from "@/services/tournamentSetup";
 import type { Player, TeamRosterEntry } from "@/types";
 
 const DRAFT_QUERY_STALE_TIME_MS = 60_000;
@@ -13,11 +17,23 @@ type Notice = {
   text: string;
 };
 
+function toNumberOrUndefined(value: string): number | undefined {
+  if (!value.trim()) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 export default function DraftRoomClient() {
   const queryClient = useQueryClient();
   const [selectedTournamentId, setSelectedTournamentId] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showAddPlayerForm, setShowAddPlayerForm] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerGolfHandicap, setNewPlayerGolfHandicap] = useState("");
+  const [newPlayerBeerHandicap, setNewPlayerBeerHandicap] = useState("");
 
   const tournamentsQuery = useQuery({
     queryKey: ["tournaments"],
@@ -72,8 +88,8 @@ export default function DraftRoomClient() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Snake Draft</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-300">
-          Captains stay fixed as roster slot one. The remaining draft picks follow
-          snake order and persist to <code>team_players</code>.
+          Add players and tune handicaps here, then draft in snake order. Captains
+          stay fixed as roster slot one.
         </p>
       </header>
 
@@ -259,12 +275,12 @@ export default function DraftRoomClient() {
               ))}
             </div>
 
-            <aside className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
+            <aside className="flex min-h-0 flex-col rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold">Available players</h2>
                   <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                    Tap a player to make the current pick.
+                    Add players and adjust handicaps before or during the draft.
                   </p>
                 </div>
                 <div className="rounded-2xl bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-900">
@@ -272,7 +288,76 @@ export default function DraftRoomClient() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3">
+              <div className="mt-4 grid gap-2 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-700">
+                {!showAddPlayerForm ? (
+                  <button
+                    className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+                    onClick={() => setShowAddPlayerForm(true)}
+                  >
+                    + Add Player
+                  </button>
+                ) : (
+                  <>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Add player
+                    </div>
+                    <input
+                      className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                      placeholder="Player name"
+                      value={newPlayerName}
+                      onChange={(event) => setNewPlayerName(event.target.value)}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                        placeholder="Golf hcp"
+                        value={newPlayerGolfHandicap}
+                        onChange={(event) => setNewPlayerGolfHandicap(event.target.value)}
+                      />
+                      <input
+                        className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+                        placeholder="Beer hcp"
+                        value={newPlayerBeerHandicap}
+                        onChange={(event) => setNewPlayerBeerHandicap(event.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        className="rounded-xl border border-zinc-300 px-3 py-2 text-sm font-medium dark:border-zinc-700"
+                        onClick={() => setShowAddPlayerForm(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="rounded-xl bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
+                        disabled={busy || !newPlayerName.trim()}
+                        onClick={() =>
+                          void runAction(async () => {
+                            const created = await createPlayer({
+                              name: newPlayerName,
+                              golfHandicap: toNumberOrUndefined(newPlayerGolfHandicap),
+                              beerHandicap: toNumberOrUndefined(newPlayerBeerHandicap),
+                            });
+                            setNewPlayerName("");
+                            setNewPlayerGolfHandicap("");
+                            setNewPlayerBeerHandicap("");
+                            setShowAddPlayerForm(false);
+                            await refreshDraft();
+                            setNotice({
+                              kind: "success",
+                              text: `Added ${created.name} to the player pool.`,
+                            });
+                          })
+                        }
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1">
                 {draftSnapshot.availablePlayers.map((player) => {
                   const canDraft =
                     Boolean(draftSnapshot.nextPick) &&
@@ -280,31 +365,58 @@ export default function DraftRoomClient() {
                     !draftSnapshot.isComplete;
 
                   return (
-                    <button
+                    <div
                       key={player.id}
-                      className="rounded-2xl border border-zinc-200 px-4 py-4 text-left shadow-sm transition hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700"
-                      disabled={!canDraft}
-                      onClick={() =>
-                        void runAction(async () => {
-                          if (!draftSnapshot.nextPick) {
-                            return;
-                          }
-
-                          await draftPlayer({
-                            tournamentId: draftSnapshot.tournament.id,
-                            teamId: draftSnapshot.nextPick.teamId,
-                            playerId: player.id,
-                          });
-                          await refreshDraft();
-                          setNotice({
-                            kind: "success",
-                            text: `${player.name} drafted by ${draftSnapshot.nextPick.teamName}.`,
-                          });
-                        })
-                      }
+                      className="rounded-2xl border border-zinc-200 px-3 py-3 shadow-sm dark:border-zinc-700"
                     >
-                      <PlayerCardContent player={player} />
-                    </button>
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1">
+                          <PlayerCardContent player={player} />
+                        </div>
+                        <button
+                          className="rounded-xl border border-zinc-300 px-3 py-2 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600"
+                          disabled={!canDraft}
+                          onClick={() =>
+                            void runAction(async () => {
+                              if (!draftSnapshot.nextPick) {
+                                return;
+                              }
+
+                              await draftPlayer({
+                                tournamentId: draftSnapshot.tournament.id,
+                                teamId: draftSnapshot.nextPick.teamId,
+                                playerId: player.id,
+                              });
+                              await refreshDraft();
+                              setNotice({
+                                kind: "success",
+                                text: `${player.name} drafted by ${draftSnapshot.nextPick.teamName}.`,
+                              });
+                            })
+                          }
+                        >
+                          Draft
+                        </button>
+                      </div>
+                      <EditableHandicapRow
+                        busy={busy}
+                        player={player}
+                        onSave={(golfHandicap, beerHandicap) =>
+                          runAction(async () => {
+                            await updatePlayerHandicaps({
+                              playerId: player.id,
+                              golfHandicap,
+                              beerHandicap,
+                            });
+                            await refreshDraft();
+                            setNotice({
+                              kind: "success",
+                              text: `Updated handicaps for ${player.name}.`,
+                            });
+                          })
+                        }
+                      />
+                    </div>
                   );
                 })}
 
@@ -348,6 +460,68 @@ function PlayerCardContent({ player }: { player: Player }) {
           Golf {player.golfHandicap ?? "-"} · Beer {player.beerHandicap ?? "-"}
         </div>
       </div>
+    </div>
+  );
+}
+
+function EditableHandicapRow(input: {
+  player: Player;
+  busy: boolean;
+  onSave: (golfHandicap: number | undefined, beerHandicap: number | undefined) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [golfHandicap, setGolfHandicap] = useState(
+    input.player.golfHandicap?.toString() ?? "",
+  );
+  const [beerHandicap, setBeerHandicap] = useState(
+    input.player.beerHandicap?.toString() ?? "",
+  );
+
+  useEffect(() => {
+    setGolfHandicap(input.player.golfHandicap?.toString() ?? "");
+    setBeerHandicap(input.player.beerHandicap?.toString() ?? "");
+  }, [input.player.beerHandicap, input.player.golfHandicap]);
+
+  if (!editing) {
+    return (
+      <button
+        className="mt-2 rounded-lg bg-zinc-100 px-2 py-1 text-left text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+        onClick={() => setEditing(true)}
+      >
+        Golf {input.player.golfHandicap ?? "-"} · Beer {input.player.beerHandicap ?? "-"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+      <input
+        className="rounded border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+        placeholder="Golf hcp"
+        value={golfHandicap}
+        onChange={(event) => setGolfHandicap(event.target.value)}
+      />
+      <input
+        className="rounded border border-zinc-300 px-2 py-1.5 text-xs dark:border-zinc-600 dark:bg-zinc-900"
+        placeholder="Beer hcp"
+        value={beerHandicap}
+        onChange={(event) => setBeerHandicap(event.target.value)}
+      />
+      <button
+        className="rounded border border-zinc-300 px-2 py-1.5 text-xs font-medium dark:border-zinc-600"
+        disabled={input.busy}
+        onClick={() =>
+          void (async () => {
+            await input.onSave(
+              toNumberOrUndefined(golfHandicap),
+              toNumberOrUndefined(beerHandicap),
+            );
+            setEditing(false);
+          })()
+        }
+      >
+        Save
+      </button>
     </div>
   );
 }

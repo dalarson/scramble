@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { formatThruLabel, formatToParScore } from "@/lib/scoreDisplay";
+import { computePlayerDrinkStats } from "@/lib/stats";
 import { useTournamentSnapshot } from "@/hooks/use-tournament-snapshot";
 
 export default function LeaderboardClient(input: {
@@ -18,8 +20,14 @@ export default function LeaderboardClient(input: {
     loading,
     error,
   } = useTournamentSnapshot(input.initialTournamentId);
+  const [teamPageTab, setTeamPageTab] = useState<"leaderboard" | "players">("leaderboard");
 
   const isComplete = snapshot?.tournament.status === "complete";
+  const playerStats = useMemo(
+    () => (snapshot ? computePlayerDrinkStats(snapshot) : []),
+    [snapshot],
+  );
+  const showTeamTabs = Boolean(input.liveHref);
 
   return (
     <div className="flex min-h-[calc(100dvh-1rem)] flex-col gap-2 overflow-hidden pb-18">
@@ -49,8 +57,27 @@ export default function LeaderboardClient(input: {
         <p className="text-sm text-zinc-600 dark:text-zinc-300">Loading leaderboard...</p>
       ) : null}
 
+      {showTeamTabs ? (
+        <div className="grid grid-cols-2 rounded-full border border-zinc-200 bg-white p-1 text-xs font-semibold shadow-sm dark:border-zinc-700 dark:bg-zinc-950">
+          <button
+            className={`rounded-full px-3 py-2 ${teamPageTab === "leaderboard" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : ""}`}
+            onClick={() => setTeamPageTab("leaderboard")}
+          >
+            Leaderboard
+          </button>
+          <button
+            className={`rounded-full px-3 py-2 ${teamPageTab === "players" ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : ""}`}
+            onClick={() => setTeamPageTab("players")}
+          >
+            Player Stats
+          </button>
+        </div>
+      ) : null}
+
       {snapshot ? (
-        isComplete ? (
+        showTeamTabs && teamPageTab === "players" ? (
+          <PlayerStatsTab stats={playerStats} />
+        ) : isComplete ? (
           <FinalStandingsView snapshot={snapshot} highlightTeamId={input.highlightTeamId} />
         ) : (
           <LiveLeaderboardView snapshot={snapshot} highlightTeamId={input.highlightTeamId} />
@@ -72,6 +99,63 @@ export default function LeaderboardClient(input: {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PlayerStatsTab(input: {
+  stats: ReturnType<typeof computePlayerDrinkStats>;
+}) {
+  return (
+    <div className="min-h-0 flex-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
+      <div className="grid grid-cols-[26px_minmax(0,1fr)_40px_40px_40px] items-center gap-1 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700">
+        <span>#</span>
+        <span>Player</span>
+        <span className="text-right">🍺</span>
+        <span className="text-right">🔥</span>
+        <span className="text-right">Total</span>
+      </div>
+      {input.stats.length === 0 ? (
+        <div className="p-4 text-sm text-zinc-500">No player stats yet.</div>
+      ) : (
+        input.stats.map((player, index) => (
+          <div
+            key={player.playerId}
+            className={`grid grid-cols-[26px_minmax(0,1fr)_40px_40px_40px] items-center gap-1 px-3 py-2 ${
+              index !== input.stats.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
+            }`}
+          >
+            <span className="text-xs font-semibold">{index + 1}</span>
+            <div className="flex min-w-0 items-center gap-2">
+              <PlayerAvatar name={player.playerName} photoUrl={player.playerPhotoUrl} />
+              <span className="truncate text-sm font-medium">{player.playerName}</span>
+            </div>
+            <span className="text-right text-sm font-semibold">{player.beers}</span>
+            <span className="text-right text-sm font-semibold">{player.birdieJuice}</span>
+            <span className="text-right text-sm font-semibold">{player.totalDrinks}</span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function PlayerAvatar(input: { name: string; photoUrl: string | null }) {
+  if (input.photoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img alt={input.name} className="h-7 w-7 rounded-full object-cover" src={input.photoUrl} />
+    );
+  }
+
+  const initials = input.name
+    .split(" ")
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+      {initials}
     </div>
   );
 }
@@ -197,4 +281,3 @@ function FinalStandingsView({
     </div>
   );
 }
-
