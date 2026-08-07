@@ -18,6 +18,8 @@ type TournamentRow = {
   date: string;
   course_id: string;
   tee_set_id: string;
+  birdie_juice_enabled: boolean;
+  beer_scoring_mode: Tournament["beerScoringMode"];
   status: Tournament["status"];
   created_at: string;
 };
@@ -79,6 +81,8 @@ function mapTournament(row: TournamentRow): Tournament {
     date: row.date,
     courseId: row.course_id,
     teeSetId: row.tee_set_id,
+    birdieJuiceEnabled: row.birdie_juice_enabled,
+    beerScoringMode: row.beer_scoring_mode,
     status: row.status,
     createdAt: row.created_at,
   };
@@ -260,7 +264,9 @@ export async function updateTournamentStatus(input: {
     .from("tournaments")
     .update({ status: input.status })
     .eq("id", input.tournamentId)
-    .select("id,join_code,name,date,course_id,tee_set_id,status,created_at")
+    .select(
+      "id,join_code,name,date,course_id,tee_set_id,birdie_juice_enabled,beer_scoring_mode,status,created_at",
+    )
     .single();
 
   if (error || !data) {
@@ -326,6 +332,34 @@ export async function logBeerEvent(input: {
   type: BeerEvent["type"];
 }): Promise<BeerEvent> {
   const supabase = getSupabaseClient();
+  if (input.type === "birdie_juice") {
+    const { data: teamRow, error: teamError } = await supabase
+      .from("teams")
+      .select("tournament_id")
+      .eq("id", input.teamId)
+      .single();
+
+    if (teamError || !teamRow) {
+      throw new Error(`Failed to load team for drink event: ${teamError?.message ?? "Unknown error"}`);
+    }
+
+    const { data: tournamentRow, error: tournamentError } = await supabase
+      .from("tournaments")
+      .select("birdie_juice_enabled")
+      .eq("id", teamRow.tournament_id)
+      .single();
+
+    if (tournamentError || !tournamentRow) {
+      throw new Error(
+        `Failed to load tournament settings: ${tournamentError?.message ?? "Unknown error"}`,
+      );
+    }
+
+    if (!tournamentRow.birdie_juice_enabled) {
+      throw new Error("Birdie juice is disabled for this tournament.");
+    }
+  }
+
   const { data, error } = await supabase
     .from("beer_events")
     .insert({
@@ -377,7 +411,9 @@ export async function getTournamentSnapshot(
   const supabase = getSupabaseClient();
   const { data: tournamentData, error: tournamentError } = await supabase
     .from("tournaments")
-    .select("id,join_code,name,date,course_id,tee_set_id,status,created_at")
+    .select(
+      "id,join_code,name,date,course_id,tee_set_id,birdie_juice_enabled,beer_scoring_mode,status,created_at",
+    )
     .eq("id", tournamentId)
     .single();
 
@@ -485,6 +521,7 @@ export async function getTournamentSnapshot(
       playerId: row.player_id,
       playerName: player.name,
       playerPhotoUrl: player.photoUrl,
+      beerHandicap: player.beerHandicap,
       draftPosition: row.draft_position,
     });
     rostersByTeamId.set(
@@ -505,6 +542,7 @@ export async function getTournamentSnapshot(
           playerId: captain.id,
           playerName: captain.name,
           playerPhotoUrl: captain.photoUrl,
+          beerHandicap: captain.beerHandicap,
           draftPosition: 1,
         },
       ]);

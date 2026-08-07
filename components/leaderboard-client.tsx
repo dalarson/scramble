@@ -27,6 +27,7 @@ export default function LeaderboardClient(input: {
     () => (snapshot ? computePlayerDrinkStats(snapshot) : []),
     [snapshot],
   );
+  const showBirdieJuice = snapshot?.tournament.birdieJuiceEnabled ?? false;
   const showTeamTabs = Boolean(input.liveHref);
 
   return (
@@ -76,7 +77,11 @@ export default function LeaderboardClient(input: {
 
       {snapshot ? (
         showTeamTabs && teamPageTab === "players" ? (
-          <PlayerStatsTab stats={playerStats} />
+          <PlayerStatsTab
+            beerScoringMode={snapshot.tournament.beerScoringMode}
+            showBirdieJuice={showBirdieJuice}
+            stats={playerStats}
+          />
         ) : isComplete ? (
           <FinalStandingsView snapshot={snapshot} highlightTeamId={input.highlightTeamId} />
         ) : (
@@ -105,24 +110,45 @@ export default function LeaderboardClient(input: {
 
 function PlayerStatsTab(input: {
   stats: ReturnType<typeof computePlayerDrinkStats>;
+  showBirdieJuice: boolean;
+  beerScoringMode: "gross" | "net";
 }) {
+  const sortedStats = [...input.stats].sort((left, right) => {
+    const leftBonus =
+      input.beerScoringMode === "net" ? left.netBeerBonus : left.beers;
+    const rightBonus =
+      input.beerScoringMode === "net" ? right.netBeerBonus : right.beers;
+    return (
+      rightBonus - leftBonus ||
+      right.beers - left.beers ||
+      right.totalDrinks - left.totalDrinks
+    );
+  });
+  const gridClass = input.showBirdieJuice
+    ? "grid-cols-[26px_minmax(0,1fr)_38px_40px_44px_40px_40px]"
+    : "grid-cols-[26px_minmax(0,1fr)_38px_44px_44px]";
+
   return (
     <div className="min-h-0 flex-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-      <div className="grid grid-cols-[26px_minmax(0,1fr)_40px_40px_40px] items-center gap-1 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700">
+      <div
+        className={`grid ${gridClass} items-center gap-1 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700`}
+      >
         <span>#</span>
         <span>Player</span>
-        <span className="text-right">🍺</span>
-        <span className="text-right">🔥</span>
-        <span className="text-right">Total</span>
+        <span className="text-right">Hcp</span>
+        <span className="text-right">Beers</span>
+        <span className="text-right">Bonus</span>
+        {input.showBirdieJuice ? <span className="text-right">Juice</span> : null}
+        {input.showBirdieJuice ? <span className="text-right">Total</span> : null}
       </div>
-      {input.stats.length === 0 ? (
+      {sortedStats.length === 0 ? (
         <div className="p-4 text-sm text-zinc-500">No player stats yet.</div>
       ) : (
-        input.stats.map((player, index) => (
+        sortedStats.map((player, index) => (
           <div
             key={player.playerId}
-            className={`grid grid-cols-[26px_minmax(0,1fr)_40px_40px_40px] items-center gap-1 px-3 py-2 ${
-              index !== input.stats.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
+            className={`grid ${gridClass} items-center gap-1 px-3 py-2 ${
+              index !== sortedStats.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
             }`}
           >
             <span className="text-xs font-semibold">{index + 1}</span>
@@ -135,9 +161,19 @@ function PlayerStatsTab(input: {
                 </div>
               </div>
             </div>
+            <span className="text-right text-sm font-semibold">
+            {player.beerHandicap ?? "-"}
+            </span>
             <span className="text-right text-sm font-semibold">{player.beers}</span>
+            <span className="text-right text-sm font-semibold">
+            {input.beerScoringMode === "net" ? player.netBeerBonus : player.beers}
+            </span>
+            {input.showBirdieJuice ? (
             <span className="text-right text-sm font-semibold">{player.birdieJuice}</span>
+            ) : null}
+            {input.showBirdieJuice ? (
             <span className="text-right text-sm font-semibold">{player.totalDrinks}</span>
+            ) : null}
           </div>
         ))
       )}
@@ -200,8 +236,10 @@ function LiveLeaderboardView({
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{entry.teamName}</div>
                 <div className="truncate text-[11px] opacity-75">
-                  {formatThruLabel(entry.holesPlayed)} · Beers {entry.beerBonus} · Debt{" "}
-                  {entry.birdieDebt}
+                  {formatThruLabel(entry.holesPlayed)} · Beers {entry.beerBonus}
+                  {snapshot.tournament.birdieJuiceEnabled
+                    ? ` · Debt ${entry.birdieDebt}`
+                    : ""}
                 </div>
               </div>
               <div className="text-right">
@@ -260,7 +298,10 @@ function FinalStandingsView({
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{entry.teamName}</div>
                 <div className="truncate text-[10px] opacity-70">
-                  {entry.birdies} birdies · {entry.birdieJuice} juice
+                  {entry.birdies} birdies
+                  {snapshot.tournament.birdieJuiceEnabled
+                    ? ` · ${entry.birdieJuice} juice`
+                    : ""}
                 </div>
               </div>
               <div className="text-right">

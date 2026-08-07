@@ -79,6 +79,7 @@ export async function getDraftSnapshot(tournamentId: string): Promise<DraftSnaps
       playerId: row.player_id,
       playerName: player.name,
       playerPhotoUrl: player.photoUrl,
+      beerHandicap: player.beerHandicap,
       draftPosition: row.draft_position,
     });
     rostersByTeamId.set(row.team_id, rosterEntries);

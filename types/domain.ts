@@ -1,6 +1,7 @@
 export type TournamentStatus = "draft" | "live" | "complete" | "archived";
 export type TeamStatus = "active" | "dq";
 export type BeerEventType = "normal" | "birdie_juice";
+export type BeerScoringMode = "gross" | "net";
 
 export interface Course {
   id: string;
@@ -34,6 +35,8 @@ export interface Tournament {
   date: string;
   courseId: string;
   teeSetId: string;
+  birdieJuiceEnabled: boolean;
+  beerScoringMode: BeerScoringMode;
   status: TournamentStatus;
   createdAt: string;
 }

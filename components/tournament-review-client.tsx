@@ -56,7 +56,10 @@ export default function TournamentReviewClient(input: {
                   {team
                     ? formatGolfScoreWithToPar(team.grossScore, team.parPlayed)
                     : entry.grossScore}{" "}
-                  · Beer bonus -{entry.beerBonus} · Birdie debt {entry.birdieDebt}
+                  · Beer bonus -{entry.beerBonus}
+                  {snapshot.tournament.birdieJuiceEnabled
+                    ? ` · Birdie debt ${entry.birdieDebt}`
+                    : ""}
                 </div>
               </div>
             );
@@ -80,20 +83,26 @@ export default function TournamentReviewClient(input: {
       <section className="rounded-3xl border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-950">
         <h2 className="text-lg font-semibold">Player stats</h2>
         <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-700">
-          <div className="grid grid-cols-[1fr_64px_64px_64px] border-b border-zinc-200 px-3 py-2 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+          <div
+            className={`grid ${snapshot.tournament.birdieJuiceEnabled ? "grid-cols-[1fr_64px_64px_64px]" : "grid-cols-[1fr_64px_64px]"} border-b border-zinc-200 px-3 py-2 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-700 dark:text-zinc-400`}
+          >
             <span>Player</span>
             <span className="text-right">Beers</span>
-            <span className="text-right">Juice</span>
+            {snapshot.tournament.birdieJuiceEnabled ? (
+              <span className="text-right">Juice</span>
+            ) : null}
             <span className="text-right">Total</span>
           </div>
           {playerStats.map((player) => (
             <div
               key={player.playerId}
-              className="grid grid-cols-[1fr_64px_64px_64px] border-b border-zinc-200 px-3 py-2 text-sm last:border-b-0 dark:border-zinc-700"
+              className={`grid ${snapshot.tournament.birdieJuiceEnabled ? "grid-cols-[1fr_64px_64px_64px]" : "grid-cols-[1fr_64px_64px]"} border-b border-zinc-200 px-3 py-2 text-sm last:border-b-0 dark:border-zinc-700`}
             >
               <span>{player.playerName}</span>
               <span className="text-right">{player.beers}</span>
-              <span className="text-right">{player.birdieJuice}</span>
+              {snapshot.tournament.birdieJuiceEnabled ? (
+                <span className="text-right">{player.birdieJuice}</span>
+              ) : null}
               <span className="text-right font-semibold">{player.totalDrinks}</span>
             </div>
           ))}

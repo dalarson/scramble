@@ -110,6 +110,7 @@ export default function LiveTournamentClient(input: {
   const selectedTeam =
     snapshot?.teams.find((teamSummary) => teamSummary.team.id === effectiveSelectedTeamId) ??
     null;
+  const birdieJuiceEnabled = snapshot?.tournament.birdieJuiceEnabled ?? false;
 
   const availableHoles = snapshot?.holes ?? [];
   const effectiveSelectedHoleId =
@@ -289,7 +290,9 @@ export default function LiveTournamentClient(input: {
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2 rounded-2xl bg-white/8 p-3 text-center dark:bg-black/8">
+            <div
+              className={`mt-3 grid gap-2 rounded-2xl bg-white/8 p-3 text-center dark:bg-black/8 ${birdieJuiceEnabled ? "grid-cols-3" : "grid-cols-2"}`}
+            >
               <SummaryStat
                 label="Golf"
                 value={formatGolfScoreWithToPar(
@@ -298,11 +301,13 @@ export default function LiveTournamentClient(input: {
                 )}
               />
               <SummaryStat label="Beer bonus" value={`-${selectedTeam.beerBonus}`} />
-              <SummaryStat
-                danger={selectedTeam.birdieDebt > 0}
-                label="Birdie debt"
-                value={selectedTeam.birdieDebt.toString()}
-              />
+              {birdieJuiceEnabled ? (
+                <SummaryStat
+                  danger={selectedTeam.birdieDebt > 0}
+                  label="Birdie debt"
+                  value={selectedTeam.birdieDebt.toString()}
+                />
+              ) : null}
             </div>
           </section>
 
@@ -388,7 +393,7 @@ export default function LiveTournamentClient(input: {
             </div>
           </section>
 
-          <section className="grid grid-cols-2 gap-2">
+          <section className={`grid gap-2 ${birdieJuiceEnabled ? "grid-cols-2" : "grid-cols-1"}`}>
             <LongPressActionButton
               className="rounded-[1.75rem] bg-gradient-to-b from-amber-300 via-amber-400 to-amber-600 text-white shadow-lg"
               disabled={submitting || selectedTeam.players.length === 0}
@@ -397,16 +402,18 @@ export default function LiveTournamentClient(input: {
               onClick={() => setDrinkModal({ type: "normal", title: "Who drank the beer?" })}
               onLongPress={() => setUndoType("normal")}
             />
-            <LongPressActionButton
-              className="rounded-[1.75rem] bg-gradient-to-b from-orange-400 via-red-500 to-red-700 text-white shadow-lg"
-              disabled={submitting || selectedTeam.players.length === 0}
-              icon="🥃"
-              label="Birdie Juice"
-              onClick={() =>
-                setDrinkModal({ type: "birdie_juice", title: "Who drank the birdie juice?" })
-              }
-              onLongPress={() => setUndoType("birdie_juice")}
-            />
+            {birdieJuiceEnabled ? (
+              <LongPressActionButton
+                className="rounded-[1.75rem] bg-gradient-to-b from-orange-400 via-red-500 to-red-700 text-white shadow-lg"
+                disabled={submitting || selectedTeam.players.length === 0}
+                icon="🥃"
+                label="Birdie Juice"
+                onClick={() =>
+                  setDrinkModal({ type: "birdie_juice", title: "Who drank the birdie juice?" })
+                }
+                onLongPress={() => setUndoType("birdie_juice")}
+              />
+            ) : null}
           </section>
         </div>
       ) : null}

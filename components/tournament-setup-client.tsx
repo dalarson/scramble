@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import type { Course, Team, TeeSet, Tournament } from "@/types";
+import type { BeerScoringMode, Course, Team, TeeSet, Tournament } from "@/types";
 import { listTeams } from "@/services/liveTournament";
 import {
   createCourse,
@@ -44,6 +44,7 @@ export default function TournamentSetupClient() {
   const [teeSlope, setTeeSlope] = useState("120");
   const [teePar, setTeePar] = useState("72");
 
+  const [holeCourseId, setHoleCourseId] = useState("");
   const [holeTeeSetId, setHoleTeeSetId] = useState("");
   const [holeNumber, setHoleNumber] = useState("1");
   const [holePar, setHolePar] = useState("4");
@@ -54,10 +55,21 @@ export default function TournamentSetupClient() {
   const [tournamentDate, setTournamentDate] = useState("");
   const [tournamentCourseId, setTournamentCourseId] = useState("");
   const [tournamentTeeSetId, setTournamentTeeSetId] = useState("");
+  const [tournamentBirdieJuiceEnabled, setTournamentBirdieJuiceEnabled] = useState(false);
+  const [tournamentBeerScoringMode, setTournamentBeerScoringMode] =
+    useState<BeerScoringMode>("gross");
 
   const teeSetsForSelectedTournamentCourse = useMemo(
     () => teeSets.filter((teeSet) => teeSet.courseId === tournamentCourseId),
     [teeSets, tournamentCourseId],
+  );
+  const teeSetsForSelectedHoleCourse = useMemo(
+    () => teeSets.filter((teeSet) => teeSet.courseId === holeCourseId),
+    [teeSets, holeCourseId],
+  );
+  const coursesById = useMemo(
+    () => new Map(courses.map((course) => [course.id, course])),
+    [courses],
   );
   const tournamentsById = new Map(tournaments.map((tournament) => [tournament.id, tournament]));
   const effectiveTournamentTeeSetId = teeSetsForSelectedTournamentCourse.some(
@@ -65,6 +77,11 @@ export default function TournamentSetupClient() {
   )
     ? tournamentTeeSetId
     : (teeSetsForSelectedTournamentCourse[0]?.id ?? "");
+  const effectiveHoleTeeSetId = teeSetsForSelectedHoleCourse.some(
+    (teeSet) => teeSet.id === holeTeeSetId,
+  )
+    ? holeTeeSetId
+    : (teeSetsForSelectedHoleCourse[0]?.id ?? "");
 
   async function refresh() {
     setLoading(true);
@@ -81,6 +98,7 @@ export default function TournamentSetupClient() {
       setTeams(nextTeams);
       setTournaments(nextTournaments);
       setTeeCourseId((current) => current || nextCourses[0]?.id || "");
+      setHoleCourseId((current) => current || nextCourses[0]?.id || "");
       setHoleTeeSetId((current) => current || nextTeeSets[0]?.id || "");
       setTournamentCourseId((current) => current || nextCourses[0]?.id || "");
       setTournamentTeeSetId((current) => current || nextTeeSets[0]?.id || "");
@@ -230,13 +248,25 @@ export default function TournamentSetupClient() {
         <h2 className="font-medium">Add Hole</h2>
         <select
           className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
-          value={holeTeeSetId}
+          value={holeCourseId}
+          onChange={(event) => setHoleCourseId(event.target.value)}
+        >
+          <option value="">Select course</option>
+          {courses.map((course) => (
+            <option key={course.id} value={course.id}>
+              {course.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+          value={effectiveHoleTeeSetId}
           onChange={(event) => setHoleTeeSetId(event.target.value)}
         >
           <option value="">Select tee set</option>
-          {teeSets.map((teeSet) => (
+          {teeSetsForSelectedHoleCourse.map((teeSet) => (
             <option key={teeSet.id} value={teeSet.id}>
-              {teeSet.name}
+              {teeSet.name} ({coursesById.get(teeSet.courseId)?.name ?? "Unknown course"})
             </option>
           ))}
         </select>
@@ -266,7 +296,7 @@ export default function TournamentSetupClient() {
         />
         <button
           className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
-          disabled={!holeTeeSetId || loading}
+          disabled={!effectiveHoleTeeSetId || loading}
           onClick={async () => {
             const number = Number(holeNumber);
             const par = Number(holePar);
@@ -276,7 +306,7 @@ export default function TournamentSetupClient() {
             }
             try {
               await createHole({
-                teeSetId: holeTeeSetId,
+                teeSetId: effectiveHoleTeeSetId,
                 number,
                 par,
                 yardage: toNumberOrUndefined(holeYardage),
@@ -329,10 +359,32 @@ export default function TournamentSetupClient() {
           <option value="">Select tee set</option>
           {teeSetsForSelectedTournamentCourse.map((teeSet) => (
             <option key={teeSet.id} value={teeSet.id}>
-              {teeSet.name}
+              {teeSet.name} ({coursesById.get(teeSet.courseId)?.name ?? "Unknown course"})
             </option>
           ))}
         </select>
+        <label className="flex items-center justify-between rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600">
+          <span className="font-medium">Enable birdie juice</span>
+          <input
+            checked={tournamentBirdieJuiceEnabled}
+            className="h-4 w-4"
+            onChange={(event) => setTournamentBirdieJuiceEnabled(event.target.checked)}
+            type="checkbox"
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span className="font-medium">Beer scoring mode</span>
+          <select
+            className="rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-900"
+            value={tournamentBeerScoringMode}
+            onChange={(event) =>
+              setTournamentBeerScoringMode(event.target.value as BeerScoringMode)
+            }
+          >
+            <option value="gross">Gross (every beer counts -1)</option>
+            <option value="net">Net (beers count after handicap)</option>
+          </select>
+        </label>
         <button
           className="rounded bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900"
           disabled={
@@ -349,6 +401,8 @@ export default function TournamentSetupClient() {
                 date: tournamentDate,
                 courseId: tournamentCourseId,
                 teeSetId: effectiveTournamentTeeSetId,
+                birdieJuiceEnabled: tournamentBirdieJuiceEnabled,
+                beerScoringMode: tournamentBeerScoringMode,
               });
               setTournamentName("");
               setTournamentDate("");

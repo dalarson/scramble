@@ -1,4 +1,4 @@
-import type { BeerEvent, HoleScore, TeamStats } from "@/types";
+import type { BeerEvent, BeerScoringMode, HoleScore, TeamStats } from "@/types";
 
 export interface HoleScoreWithPar {
   score: HoleScore;
@@ -15,8 +15,34 @@ export function calculateParPlayed(
   return holeScores.reduce((total, holeScore) => total + holeScore.par, 0);
 }
 
-export function calculateBeerBonus(events: readonly BeerEvent[]): number {
-  return events.filter((event) => event.type === "normal").length;
+function normalizeBeerHandicap(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.ceil(value));
+}
+
+export function calculateBeerBonus(input: {
+  events: readonly BeerEvent[];
+  beerScoringMode: BeerScoringMode;
+  playerBeerHandicaps: ReadonlyMap<string, number | null>;
+}): number {
+  const normalBeerEvents = input.events.filter((event) => event.type === "normal");
+  if (input.beerScoringMode === "gross") {
+    return normalBeerEvents.length;
+  }
+
+  const beersByPlayer = new Map<string, number>();
+  for (const event of normalBeerEvents) {
+    beersByPlayer.set(event.playerId, (beersByPlayer.get(event.playerId) ?? 0) + 1);
+  }
+
+  let bonus = 0;
+  for (const [playerId, beers] of beersByPlayer.entries()) {
+    const handicap = normalizeBeerHandicap(input.playerBeerHandicaps.get(playerId));
+    bonus += Math.max(0, beers - handicap);
+  }
+  return bonus;
 }
 
 export function calculateBirdies(
@@ -55,15 +81,24 @@ export function calculateTeamStats(input: {
   teamId: string;
   holeScores: readonly HoleScoreWithPar[];
   beerEvents: readonly BeerEvent[];
+  playerBeerHandicaps: ReadonlyMap<string, number | null>;
+  beerScoringMode: BeerScoringMode;
+  birdieJuiceEnabled: boolean;
   tournamentComplete: boolean;
 }): TeamStats {
   const grossScore = calculateGrossScore(input.holeScores.map(({ score }) => score));
   const holesPlayed = input.holeScores.length;
   const parPlayed = calculateParPlayed(input.holeScores);
-  const beerBonus = calculateBeerBonus(input.beerEvents);
+  const beerBonus = calculateBeerBonus({
+    events: input.beerEvents,
+    beerScoringMode: input.beerScoringMode,
+    playerBeerHandicaps: input.playerBeerHandicaps,
+  });
   const birdies = calculateBirdies(input.holeScores);
-  const birdieJuice = calculateBirdieJuice(input.beerEvents);
-  const birdieDebt = calculateBirdieDebt(birdies, birdieJuice);
+  const birdieJuice = input.birdieJuiceEnabled ? calculateBirdieJuice(input.beerEvents) : 0;
+  const birdieDebt = input.birdieJuiceEnabled
+    ? calculateBirdieDebt(birdies, birdieJuice)
+    : 0;
   const netScore = calculateNetScore(grossScore, beerBonus);
   const toParScore = calculateToParScore(grossScore, parPlayed, beerBonus);
 

@@ -5,6 +5,7 @@ export interface TeamRosterEntry {
   playerId: string;
   playerName: string;
   playerPhotoUrl: string | null;
+  beerHandicap: number | null;
   draftPosition: number;
 }
 

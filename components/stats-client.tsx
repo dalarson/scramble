@@ -1,29 +1,40 @@
 "use client";
 
-import { useState } from "react";
 import { useTournamentSnapshot } from "@/hooks/use-tournament-snapshot";
 import { computePlayerDrinkStats } from "@/lib/stats";
 import { formatToParScore } from "@/lib/scoreDisplay";
 import type { PlayerDrinkStats } from "@/types/stats";
 
-type DrinkTab = "beers" | "juice" | "combined";
-
-function DrinkTable({
-  rows,
-  valueKey,
-  valueLabel,
-}: {
+function PlayerDrinkLeaderboard(input: {
   rows: PlayerDrinkStats[];
-  valueKey: keyof Pick<PlayerDrinkStats, "beers" | "birdieJuice" | "totalDrinks">;
-  valueLabel: string;
+  beerScoringMode: "gross" | "net";
+  showBirdieJuice: boolean;
 }) {
-  const sorted = [...rows].sort((a, b) => b[valueKey] - a[valueKey]);
+  const sorted = [...input.rows].sort((left, right) => {
+    const leftBonus = input.beerScoringMode === "net" ? left.netBeerBonus : left.beers;
+    const rightBonus = input.beerScoringMode === "net" ? right.netBeerBonus : right.beers;
+    return (
+      rightBonus - leftBonus ||
+      right.beers - left.beers ||
+      right.totalDrinks - left.totalDrinks
+    );
+  });
+  const gridClass = input.showBirdieJuice
+    ? "grid-cols-[28px_minmax(0,1fr)_40px_44px_44px_40px_44px]"
+    : "grid-cols-[28px_minmax(0,1fr)_40px_44px_44px]";
+
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-      <div className="grid grid-cols-[28px_1fr_56px] items-center gap-2 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700">
+      <div
+        className={`grid ${gridClass} items-center gap-2 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700`}
+      >
         <span>#</span>
         <span>Player</span>
-        <span className="text-right">{valueLabel}</span>
+        <span className="text-right">Hcp</span>
+        <span className="text-right">Beers</span>
+        <span className="text-right">Bonus</span>
+        {input.showBirdieJuice ? <span className="text-right">Juice</span> : null}
+        {input.showBirdieJuice ? <span className="text-right">Total</span> : null}
       </div>
       {sorted.length === 0 ? (
         <div className="px-3 py-4 text-center text-sm text-zinc-500">No data yet</div>
@@ -31,7 +42,7 @@ function DrinkTable({
         sorted.map((row, idx) => (
           <div
             key={row.playerId}
-            className={`grid grid-cols-[28px_1fr_56px] items-center gap-2 px-3 py-2 ${
+            className={`grid ${gridClass} items-center gap-2 px-3 py-2 ${
               idx !== sorted.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
             }`}
           >
@@ -56,7 +67,17 @@ function DrinkTable({
                 </div>
               </div>
             </div>
-            <div className="text-right text-lg font-semibold">{row[valueKey]}</div>
+            <div className="text-right text-sm font-semibold">{row.beerHandicap ?? "-"}</div>
+            <div className="text-right text-sm font-semibold">{row.beers}</div>
+            <div className="text-right text-sm font-semibold">
+              {input.beerScoringMode === "net" ? row.netBeerBonus : row.beers}
+            </div>
+            {input.showBirdieJuice ? (
+              <div className="text-right text-sm font-semibold">{row.birdieJuice}</div>
+            ) : null}
+            {input.showBirdieJuice ? (
+              <div className="text-right text-sm font-semibold">{row.totalDrinks}</div>
+            ) : null}
           </div>
         ))
       )}
@@ -73,22 +94,28 @@ function FinalStandingsTable({
     return null;
   }
   const { leaderboard } = snapshot;
+  const showBirdieJuice = snapshot.tournament.birdieJuiceEnabled;
+  const standingsGridClass = showBirdieJuice
+    ? "grid-cols-[24px_minmax(0,1fr)_44px_36px_36px_36px_44px_36px]"
+    : "grid-cols-[24px_minmax(0,1fr)_44px_36px_44px_36px_36px]";
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
-      <div className="grid grid-cols-[24px_minmax(0,1fr)_44px_36px_36px_36px_44px_36px] items-center gap-1 border-b border-zinc-200 px-2 py-2 text-[9px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700">
+      <div
+        className={`grid ${standingsGridClass} items-center gap-1 border-b border-zinc-200 px-2 py-2 text-[9px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700`}
+      >
         <span>#</span>
         <span>Team</span>
         <span className="text-right">Net</span>
         <span className="text-right">Gross</span>
         <span className="text-right">Beers</span>
-        <span className="text-right">Brdies</span>
-        <span className="text-right">Juice</span>
+        <span className="text-right">Birdies</span>
+        {showBirdieJuice ? <span className="text-right">Juice</span> : null}
         <span className="text-right">Status</span>
       </div>
       {leaderboard.map((entry, idx) => (
         <div
           key={entry.teamId}
-          className={`grid grid-cols-[24px_minmax(0,1fr)_44px_36px_36px_36px_44px_36px] items-center gap-1 px-2 py-2 ${
+          className={`grid ${standingsGridClass} items-center gap-1 px-2 py-2 ${
             idx !== leaderboard.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
           } ${entry.status === "dq" ? "opacity-50" : ""}`}
         >
@@ -106,9 +133,11 @@ function FinalStandingsTable({
           <div className="text-right text-xs text-zinc-600 dark:text-zinc-400">
             {entry.birdies}
           </div>
-          <div className="text-right text-xs text-zinc-600 dark:text-zinc-400">
-            {entry.birdieJuice}
-          </div>
+          {showBirdieJuice ? (
+            <div className="text-right text-xs text-zinc-600 dark:text-zinc-400">
+              {entry.birdieJuice}
+            </div>
+          ) : null}
           <div className="text-right text-[10px] font-semibold uppercase">
             {entry.status === "dq" ? (
               <span className="text-red-500">DQ</span>
@@ -126,16 +155,9 @@ export default function StatsClient(input: { initialTournamentId?: string }) {
   const { tournaments, selectedTournamentId, setSelectedTournamentId, snapshot, loading, error } =
     useTournamentSnapshot(input.initialTournamentId);
 
-  const [drinkTab, setDrinkTab] = useState<DrinkTab>("combined");
-
   const playerStats = snapshot ? computePlayerDrinkStats(snapshot) : [];
   const isComplete = snapshot?.tournament.status === "complete";
-
-  const tabLabels: { key: DrinkTab; label: string; emoji: string }[] = [
-    { key: "combined", label: "Total", emoji: "🍺" },
-    { key: "beers", label: "Beers", emoji: "🍺" },
-    { key: "juice", label: "Birdie Juice", emoji: "🔥" },
-  ];
+  const showBirdieJuice = snapshot?.tournament.birdieJuiceEnabled ?? false;
 
   return (
     <div className="flex h-[100dvh] flex-col gap-3 overflow-hidden p-4 pb-4">
@@ -182,30 +204,11 @@ export default function StatsClient(input: { initialTournamentId?: string }) {
             <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Drinking Leaderboard
             </p>
-            <div className="mb-2 flex gap-1 rounded-2xl border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-700 dark:bg-zinc-800">
-              {tabLabels.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => setDrinkTab(key)}
-                  className={`flex-1 rounded-xl py-1.5 text-xs font-semibold transition-colors ${
-                    drinkTab === key
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-white"
-                      : "text-zinc-500"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {drinkTab === "beers" && (
-              <DrinkTable rows={playerStats} valueKey="beers" valueLabel="Beers" />
-            )}
-            {drinkTab === "juice" && (
-              <DrinkTable rows={playerStats} valueKey="birdieJuice" valueLabel="Birdie Juice" />
-            )}
-            {drinkTab === "combined" && (
-              <DrinkTable rows={playerStats} valueKey="totalDrinks" valueLabel="Total" />
-            )}
+            <PlayerDrinkLeaderboard
+              beerScoringMode={snapshot.tournament.beerScoringMode}
+              rows={playerStats}
+              showBirdieJuice={showBirdieJuice}
+            />
           </div>
         </div>
       ) : null}

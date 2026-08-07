@@ -41,6 +41,8 @@ type TournamentRow = {
   date: string;
   course_id: string;
   tee_set_id: string;
+  birdie_juice_enabled: boolean;
+  beer_scoring_mode: Tournament["beerScoringMode"];
   status: Tournament["status"];
   created_at: string;
 };
@@ -103,6 +105,8 @@ function mapTournament(row: TournamentRow): Tournament {
     date: row.date,
     courseId: row.course_id,
     teeSetId: row.tee_set_id,
+    birdieJuiceEnabled: row.birdie_juice_enabled,
+    beerScoringMode: row.beer_scoring_mode,
     status: row.status,
     createdAt: row.created_at,
   };
@@ -295,7 +299,9 @@ export async function listTournaments(): Promise<Tournament[]> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from("tournaments")
-    .select("id,join_code,name,date,course_id,tee_set_id,status,created_at")
+    .select(
+      "id,join_code,name,date,course_id,tee_set_id,birdie_juice_enabled,beer_scoring_mode,status,created_at",
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -310,6 +316,8 @@ export async function createTournament(input: {
   date: string;
   courseId: string;
   teeSetId: string;
+  birdieJuiceEnabled: boolean;
+  beerScoringMode: Tournament["beerScoringMode"];
   status?: Tournament["status"];
 }): Promise<Tournament> {
   const supabase = getSupabaseClient();
@@ -323,9 +331,13 @@ export async function createTournament(input: {
       date: input.date,
       course_id: input.courseId,
       tee_set_id: input.teeSetId,
+      birdie_juice_enabled: input.birdieJuiceEnabled,
+      beer_scoring_mode: input.beerScoringMode,
       status: input.status ?? "draft",
     })
-    .select("id,join_code,name,date,course_id,tee_set_id,status,created_at")
+    .select(
+      "id,join_code,name,date,course_id,tee_set_id,birdie_juice_enabled,beer_scoring_mode,status,created_at",
+    )
     .single();
 
   if (error || !data) {

@@ -50,6 +50,8 @@ export function buildTournamentSnapshot(input: {
   const teams = input.teams.map((team) => {
     const scores = input.scoresByTeamId.get(team.id) ?? [];
     const beerEvents = input.eventsByTeamId.get(team.id) ?? [];
+    const roster = input.rostersByTeamId.get(team.id) ?? [];
+    const playerBeerHandicaps = new Map(roster.map((entry) => [entry.playerId, entry.beerHandicap]));
     const currentHole = getCurrentHole(
       input.holes,
       scores.map((score) => score.holeId),
@@ -57,6 +59,9 @@ export function buildTournamentSnapshot(input: {
     const stats = calculateTeamStats({
       teamId: team.id,
       tournamentComplete: input.tournament.status === "complete",
+      birdieJuiceEnabled: input.tournament.birdieJuiceEnabled,
+      beerScoringMode: input.tournament.beerScoringMode,
+      playerBeerHandicaps,
       holeScores: scores
         .map((score) => {
           const hole = holesById.get(score.holeId);
@@ -74,7 +79,7 @@ export function buildTournamentSnapshot(input: {
       captain: team.captainPlayerId
         ? (input.playersById.get(team.captainPlayerId) ?? null)
         : null,
-      players: input.rostersByTeamId.get(team.id) ?? [],
+      players: roster,
       currentHole,
       scores,
       beerEvents,
