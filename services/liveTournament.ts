@@ -61,6 +61,9 @@ type HoleScoreRow = {
   team_id: string;
   hole_id: string;
   strokes: number;
+  operation_id: string;
+  entered_at: string;
+  updated_at: string;
   created_at: string;
 };
 
@@ -70,6 +73,7 @@ type BeerEventRow = {
   player_id: string;
   hole_id: string | null;
   type: BeerEvent["type"];
+  operation_id: string;
   created_at: string;
 };
 
@@ -116,6 +120,9 @@ function mapHoleScore(row: HoleScoreRow): HoleScore {
     teamId: row.team_id,
     holeId: row.hole_id,
     strokes: row.strokes,
+    operationId: row.operation_id,
+    enteredAt: row.entered_at,
+    updatedAt: row.updated_at,
     createdAt: row.created_at,
   };
 }
@@ -127,6 +134,7 @@ function mapBeerEvent(row: BeerEventRow): BeerEvent {
     playerId: row.player_id,
     holeId: row.hole_id,
     type: row.type,
+    operationId: row.operation_id,
     createdAt: row.created_at,
   };
 }
@@ -303,19 +311,18 @@ export async function submitHoleScore(input: {
   teamId: string;
   holeId: string;
   strokes: number;
+  operationId: string;
+  enteredAt: string;
 }): Promise<HoleScore> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
-    .from("hole_scores")
-    .upsert(
-      {
-        team_id: input.teamId,
-        hole_id: input.holeId,
-        strokes: input.strokes,
-      },
-      { onConflict: "team_id,hole_id" },
-    )
-    .select("id,team_id,hole_id,strokes,created_at")
+    .rpc("submit_hole_score", {
+      p_team_id: input.teamId,
+      p_hole_id: input.holeId,
+      p_strokes: input.strokes,
+      p_operation_id: input.operationId,
+      p_entered_at: input.enteredAt,
+    })
     .single();
 
   if (error || !data) {
@@ -330,6 +337,7 @@ export async function logBeerEvent(input: {
   playerId: string;
   holeId: string | null;
   type: BeerEvent["type"];
+  operationId: string;
 }): Promise<BeerEvent> {
   const supabase = getSupabaseClient();
   if (input.type === "birdie_juice") {
@@ -362,13 +370,17 @@ export async function logBeerEvent(input: {
 
   const { data, error } = await supabase
     .from("beer_events")
-    .insert({
-      team_id: input.teamId,
-      player_id: input.playerId,
-      hole_id: input.holeId,
-      type: input.type,
-    })
-    .select("id,team_id,player_id,hole_id,type,created_at")
+    .upsert(
+      {
+        team_id: input.teamId,
+        player_id: input.playerId,
+        hole_id: input.holeId,
+        type: input.type,
+        operation_id: input.operationId,
+      },
+      { onConflict: "operation_id", ignoreDuplicates: false },
+    )
+    .select("id,team_id,player_id,hole_id,type,operation_id,created_at")
     .single();
 
   if (error || !data) {
@@ -395,11 +407,26 @@ export async function undoLastBeerEvent(input: {
   if (latestError) {
     throw new Error(`Failed to load recent drink event: ${latestError.message}`);
   }
+
   if (!latestEvent) {
     throw new Error("There is no matching drink to undo.");
   }
 
   const { error } = await supabase.from("beer_events").delete().eq("id", latestEvent.id);
+  if (error) {
+    throw new Error(`Failed to undo drink event: ${error.message}`);
+  }
+}
+
+export async function deleteBeerEvent(input: {
+  eventId: string;
+  operationId: string;
+}): Promise<void> {
+  const supabase = getSupabaseClient();
+  const query = supabase.from("beer_events").delete();
+  const { error } = input.eventId.startsWith("optimistic:")
+    ? await query.eq("operation_id", input.operationId)
+    : await query.eq("id", input.eventId);
   if (error) {
     throw new Error(`Failed to undo drink event: ${error.message}`);
   }
@@ -452,13 +479,15 @@ export async function getTournamentSnapshot(
       teamIds.length
         ? supabase
             .from("hole_scores")
-            .select("id,team_id,hole_id,strokes,created_at")
+            .select(
+              "id,team_id,hole_id,strokes,operation_id,entered_at,updated_at,created_at",
+            )
             .in("team_id", teamIds)
         : Promise.resolve({ data: [], error: null }),
       teamIds.length
         ? supabase
             .from("beer_events")
-            .select("id,team_id,player_id,hole_id,type,created_at")
+            .select("id,team_id,player_id,hole_id,type,operation_id,created_at")
             .in("team_id", teamIds)
         : Promise.resolve({ data: [], error: null }),
     ]);

@@ -69,6 +69,9 @@ export interface HoleScore {
   teamId: string;
   holeId: string;
   strokes: number;
+  operationId: string;
+  enteredAt: string;
+  updatedAt: string;
   createdAt: string;
 }
 
@@ -78,6 +81,7 @@ export interface BeerEvent {
   playerId: string;
   holeId: string | null;
   type: BeerEventType;
+  operationId: string;
   createdAt: string;
 }
 
