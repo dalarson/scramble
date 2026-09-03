@@ -1,21 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLiveMutationQueue } from "@/hooks/use-live-mutation-queue";
 import {
   formatGolfScoreWithToPar,
   formatThruLabel,
   formatToParScore,
 } from "@/lib/scoreDisplay";
+import { applyLiveMutations } from "@/lib/liveMutations";
 import { useTournamentSnapshot } from "@/hooks/use-tournament-snapshot";
 import {
-  logBeerEvent,
-  submitHoleScore,
-  undoLastBeerEvent,
   updateTournamentStatus,
   validateTeamAccess,
 } from "@/services/liveTournament";
-import type { BeerEventType, TeamRosterEntry } from "@/types";
+import type { BeerEvent, BeerEventType, TeamRosterEntry } from "@/types";
 
 type Notice = {
   kind: "success" | "error";
@@ -25,6 +24,17 @@ type Notice = {
 type DrinkModalState = {
   type: BeerEventType;
   title: string;
+};
+
+type UndoDrinkState = {
+  type: BeerEventType;
+  event?: BeerEvent;
+  playerName?: string;
+};
+
+type ScoreFeedback = {
+  holeId: string;
+  strokes: number;
 };
 
 export default function LiveTournamentClient(input: {
@@ -39,17 +49,24 @@ export default function LiveTournamentClient(input: {
     tournaments,
     selectedTournamentId,
     setSelectedTournamentId,
-    snapshot,
+    snapshot: confirmedSnapshot,
     loading,
     error,
     refreshSnapshot,
   } = useTournamentSnapshot(input.initialTournamentId);
+  const mutationQueue = useLiveMutationQueue();
+  const snapshot = useMemo(
+    () => applyLiveMutations(confirmedSnapshot, mutationQueue.mutations),
+    [confirmedSnapshot, mutationQueue.mutations],
+  );
   const [selectedTeamId, setSelectedTeamId] = useState(input.initialTeamId ?? "");
   const [selectedHoleId, setSelectedHoleId] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [drinkModal, setDrinkModal] = useState<DrinkModalState | null>(null);
-  const [undoType, setUndoType] = useState<BeerEventType | null>(null);
+  const [undoDrink, setUndoDrink] = useState<UndoDrinkState | null>(null);
+  const [scoreFeedback, setScoreFeedback] = useState<ScoreFeedback | null>(null);
+  const scoreAdvanceTimerRef = useRef<number | null>(null);
   const [accessState, setAccessState] = useState<{
     checked: boolean;
     error: string | null;
@@ -124,6 +141,37 @@ export default function LiveTournamentClient(input: {
     : -1;
   const displayedHoleScore =
     selectedTeam?.scores.find((score) => score.holeId === displayedHole?.id) ?? null;
+  const selectedTeamMutations = mutationQueue.mutations.filter(
+    (mutation) =>
+      mutation.tournamentId === snapshot?.tournament.id &&
+      mutation.teamId === selectedTeam?.team.id,
+  );
+  const displayedHoleMutation = selectedTeamMutations.find(
+    (mutation) =>
+      mutation.kind === "score" && mutation.holeId === displayedHole?.id,
+  );
+  const failedMutation =
+    selectedTeamMutations.find((mutation) => mutation.status === "failed") ?? null;
+  const pendingMutationCount = selectedTeamMutations.filter(
+    (mutation) => mutation.status !== "failed",
+  ).length;
+
+  function cancelScoreAdvance() {
+    if (scoreAdvanceTimerRef.current !== null) {
+      window.clearTimeout(scoreAdvanceTimerRef.current);
+      scoreAdvanceTimerRef.current = null;
+    }
+    setScoreFeedback(null);
+  }
+
+  useEffect(
+    () => () => {
+      if (scoreAdvanceTimerRef.current !== null) {
+        window.clearTimeout(scoreAdvanceTimerRef.current);
+      }
+    },
+    [],
+  );
 
   async function runAction(action: () => Promise<void>) {
     setSubmitting(true);
@@ -171,7 +219,10 @@ export default function LiveTournamentClient(input: {
           <select
             className="rounded-full border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             value={selectedTournamentId}
-            onChange={(event) => setSelectedTournamentId(event.target.value)}
+            onChange={(event) => {
+              cancelScoreAdvance();
+              setSelectedTournamentId(event.target.value);
+            }}
           >
             <option value="">Select tournament</option>
             {tournaments.map((tournament) => (
@@ -193,6 +244,42 @@ export default function LiveTournamentClient(input: {
         >
           {notice.text}
         </p>
+      ) : null}
+
+      {snapshot && selectedTeam && (pendingMutationCount > 0 || !mutationQueue.isOnline) ? (
+        <p
+          aria-live="polite"
+          className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-900"
+        >
+          {mutationQueue.isOnline
+            ? `Saving ${pendingMutationCount} ${pendingMutationCount === 1 ? "entry" : "entries"}...`
+            : pendingMutationCount > 0
+              ? `${pendingMutationCount} ${pendingMutationCount === 1 ? "entry" : "entries"} saved on this device. Will retry when online.`
+              : "You are offline. New entries will be saved on this device."}
+        </p>
+      ) : null}
+
+      {failedMutation ? (
+        <div
+          aria-live="assertive"
+          className="rounded-md bg-red-100 px-3 py-2 text-sm text-red-900"
+        >
+          <p>{failedMutation.error ?? "An entry could not be saved."}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              className="rounded-full bg-red-800 px-3 py-1.5 text-xs font-medium text-white"
+              onClick={() => mutationQueue.retryMutation(failedMutation.operationId)}
+            >
+              Retry
+            </button>
+            <button
+              className="rounded-full border border-red-300 px-3 py-1.5 text-xs font-medium"
+              onClick={() => mutationQueue.discardMutation(failedMutation.operationId)}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {error ? (
@@ -258,7 +345,10 @@ export default function LiveTournamentClient(input: {
                       ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                       : "border border-zinc-200 dark:border-zinc-700"
                   }`}
-                  onClick={() => setSelectedTeamId(teamSummary.team.id)}
+                  onClick={() => {
+                    cancelScoreAdvance();
+                    setSelectedTeamId(teamSummary.team.id);
+                  }}
                 >
                   <div className="font-medium">{teamSummary.team.name}</div>
                   <div className="mt-0.5 opacity-75">
@@ -321,6 +411,7 @@ export default function LiveTournamentClient(input: {
                   onClick={() => {
                     const previousHole = availableHoles[displayedHoleIndex - 1];
                     if (previousHole) {
+                      cancelScoreAdvance();
                       setSelectedHoleId(previousHole.id);
                     }
                   }}
@@ -345,6 +436,7 @@ export default function LiveTournamentClient(input: {
                   onClick={() => {
                     const nextHole = availableHoles[displayedHoleIndex + 1];
                     if (nextHole) {
+                      cancelScoreAdvance();
                       setSelectedHoleId(nextHole.id);
                     }
                   }}
@@ -358,60 +450,85 @@ export default function LiveTournamentClient(input: {
               {[1, 2, 3, 4, 5, 6, 7].map((score) => (
                 <ScoreButton
                   key={score}
-                  disabled={!displayedHole || submitting}
-                  isSelected={displayedHoleScore?.strokes === score}
-                  score={score}
-                  onClick={() =>
-                    void runAction(async () => {
-                      if (!displayedHole) {
-                        return;
-                      }
-
-                      await submitHoleScore({
-                        teamId: selectedTeam.team.id,
-                        holeId: displayedHole.id,
-                        strokes: score,
-                      });
-
-                      const nextHole =
-                        availableHoles[
-                          Math.min(displayedHoleIndex + 1, availableHoles.length - 1)
-                        ] ?? null;
-
-                      await refreshSnapshot(snapshot.tournament.id);
-                      setSelectedHoleId(
-                        nextHole && nextHole.id !== displayedHole.id ? nextHole.id : "",
-                      );
-                      setNotice({
-                        kind: "success",
-                        text: `Recorded ${score} on hole ${displayedHole.number}.`,
-                      });
-                    })
+                  disabled={!displayedHole}
+                  isSelected={
+                    scoreFeedback && scoreFeedback.holeId === displayedHole?.id
+                      ? scoreFeedback.strokes === score
+                      : displayedHoleScore?.strokes === score
                   }
+                  score={score}
+                  onClick={() => {
+                    if (
+                      !displayedHole ||
+                      (scoreFeedback && scoreFeedback.holeId === displayedHole.id
+                        ? scoreFeedback.strokes === score
+                        : displayedHoleScore?.strokes === score)
+                    ) {
+                      return;
+                    }
+                    if (scoreAdvanceTimerRef.current !== null) {
+                      window.clearTimeout(scoreAdvanceTimerRef.current);
+                    }
+                    setSelectedHoleId(displayedHole.id);
+                    setScoreFeedback({ holeId: displayedHole.id, strokes: score });
+                    mutationQueue.enqueueScore({
+                      tournamentId: snapshot.tournament.id,
+                      teamId: selectedTeam.team.id,
+                      holeId: displayedHole.id,
+                      strokes: score,
+                    });
+                    setNotice(null);
+                    if ("vibrate" in navigator) {
+                      navigator.vibrate(25);
+                    }
+                    const nextHole = availableHoles[displayedHoleIndex + 1];
+                    scoreAdvanceTimerRef.current = window.setTimeout(() => {
+                      if (nextHole) {
+                        setSelectedHoleId(nextHole.id);
+                      }
+                      setScoreFeedback(null);
+                      scoreAdvanceTimerRef.current = null;
+                    }, 1_000);
+                  }}
                 />
               ))}
             </div>
+            <p aria-live="polite" className="mt-2 text-center text-xs text-zinc-500">
+              {scoreFeedback && scoreFeedback.holeId === displayedHole?.id
+                ? `Recorded ${scoreFeedback.strokes}.${availableHoles[displayedHoleIndex + 1] ? " Moving to the next hole..." : ""}`
+                : displayedHoleMutation
+                ? displayedHoleMutation.status === "failed"
+                  ? "Score not saved - retry or discard above."
+                  : mutationQueue.isOnline
+                    ? "Saving score..."
+                    : "Score saved on this device."
+                : displayedHoleScore
+                  ? "Score saved."
+                  : "Tap a score to record this hole."}
+            </p>
           </section>
 
           <section className={`grid gap-2 ${birdieJuiceEnabled ? "grid-cols-2" : "grid-cols-1"}`}>
             <LongPressActionButton
               className="rounded-[1.75rem] bg-gradient-to-b from-amber-300 via-amber-400 to-amber-600 text-white shadow-lg"
-              disabled={submitting || selectedTeam.players.length === 0}
+              disabled={selectedTeam.players.length === 0}
               icon="🍺"
               label="Beer"
+              hint="Hold to subtract"
               onClick={() => setDrinkModal({ type: "normal", title: "Who drank the beer?" })}
-              onLongPress={() => setUndoType("normal")}
+              onLongPress={() => setUndoDrink({ type: "normal" })}
             />
             {birdieJuiceEnabled ? (
               <LongPressActionButton
                 className="rounded-[1.75rem] bg-gradient-to-b from-orange-400 via-red-500 to-red-700 text-white shadow-lg"
-                disabled={submitting || selectedTeam.players.length === 0}
+                disabled={selectedTeam.players.length === 0}
                 icon="🥃"
                 label="Birdie Juice"
+                hint="Hold to subtract"
                 onClick={() =>
                   setDrinkModal({ type: "birdie_juice", title: "Who drank the birdie juice?" })
                 }
-                onLongPress={() => setUndoType("birdie_juice")}
+                onLongPress={() => setUndoDrink({ type: "birdie_juice" })}
               />
             ) : null}
           </section>
@@ -438,48 +555,86 @@ export default function LiveTournamentClient(input: {
         <PickerModal
           title={drinkModal.title}
           players={selectedTeam.players}
+          events={selectedTeam.beerEvents}
+          type={drinkModal.type}
+          action="record"
           onClose={() => setDrinkModal(null)}
-          onSelect={(playerId) =>
-            void runAction(async () => {
-              await logBeerEvent({
+          onSelect={(playerId) => {
+              mutationQueue.enqueueDrink({
+                tournamentId: snapshot.tournament.id,
                 teamId: selectedTeam.team.id,
                 playerId,
                 holeId: selectedTeam.currentHole?.id ?? displayedHole?.id ?? null,
-                type: drinkModal.type,
+                drinkType: drinkModal.type,
               });
-              await refreshSnapshot(snapshot.tournament.id);
               setDrinkModal(null);
-              setNotice({
-                kind: "success",
-                text: drinkModal.type === "normal" ? "Beer logged." : "Birdie juice logged.",
-              });
-            })
-          }
+              setNotice(null);
+              if ("vibrate" in navigator) {
+                navigator.vibrate(25);
+              }
+            }}
         />
       ) : null}
 
-      {undoType && selectedTeam && snapshot ? (
+      {undoDrink && !undoDrink.event && selectedTeam && snapshot ? (
+        <PickerModal
+          title={
+            undoDrink.type === "normal"
+              ? "Subtract a beer from whom?"
+              : "Subtract birdie juice from whom?"
+          }
+          players={selectedTeam.players}
+          events={selectedTeam.beerEvents}
+          type={undoDrink.type}
+          action="remove"
+          onClose={() => setUndoDrink(null)}
+          onSelect={(playerId) => {
+            const player = selectedTeam.players.find(
+              (entry) => entry.playerId === playerId,
+            );
+            const latestEvent = [...selectedTeam.beerEvents]
+              .filter(
+                (event) =>
+                  event.type === undoDrink.type && event.playerId === playerId,
+              )
+              .sort(
+                (left, right) =>
+                  Date.parse(right.createdAt) - Date.parse(left.createdAt),
+              )[0];
+            if (!player || !latestEvent) {
+              setNotice({
+                kind: "error",
+                text: "That player has no matching drink to subtract.",
+              });
+              setUndoDrink(null);
+              return;
+            }
+            setUndoDrink({
+              type: undoDrink.type,
+              event: latestEvent,
+              playerName: player.playerName,
+            });
+          }}
+        />
+      ) : null}
+
+      {undoDrink?.event && undoDrink.playerName && selectedTeam && snapshot ? (
         <ConfirmModal
           title={
-            undoType === "normal"
-              ? "Are you sure you want to un-do the last beer drank?"
-              : "Are you sure you want to un-do the last birdie juice drank?"
+            undoDrink.type === "normal"
+              ? `Subtract one beer from ${undoDrink.playerName}?`
+              : `Subtract one birdie juice from ${undoDrink.playerName}?`
           }
-          onCancel={() => setUndoType(null)}
-          onConfirm={() =>
-            void runAction(async () => {
-              await undoLastBeerEvent({ teamId: selectedTeam.team.id, type: undoType });
-              await refreshSnapshot(snapshot.tournament.id);
-              setUndoType(null);
-              setNotice({
-                kind: "success",
-                text:
-                  undoType === "normal"
-                    ? "Removed the most recent beer."
-                    : "Removed the most recent birdie juice.",
-              });
-            })
-          }
+          onCancel={() => setUndoDrink(null)}
+          onConfirm={() => {
+            mutationQueue.enqueueDrinkUndo({
+              tournamentId: snapshot.tournament.id,
+              teamId: selectedTeam.team.id,
+              event: undoDrink.event!,
+            });
+            setNotice(null);
+            setUndoDrink(null);
+          }}
         />
       ) : null}
     </div>
@@ -509,7 +664,8 @@ function ScoreButton(input: {
 }) {
   return (
     <button
-      className={`flex aspect-square items-center justify-center rounded-[1.5rem] text-xl font-semibold shadow-[inset_0_2px_0_rgba(255,255,255,0.2),inset_0_-8px_12px_rgba(0,0,0,0.22),0_12px_22px_rgba(0,0,0,0.16)] transition disabled:opacity-40 ${
+      aria-pressed={input.isSelected}
+      className={`flex aspect-square touch-manipulation items-center justify-center rounded-[1.5rem] text-xl font-semibold shadow-[inset_0_2px_0_rgba(255,255,255,0.2),inset_0_-8px_12px_rgba(0,0,0,0.22),0_12px_22px_rgba(0,0,0,0.16)] transition duration-75 active:translate-y-0.5 active:scale-95 active:shadow-inner disabled:opacity-40 ${
         input.isSelected
           ? "bg-gradient-to-b from-emerald-400 to-emerald-700 text-white"
           : "bg-gradient-to-b from-zinc-700 to-zinc-900 text-white dark:from-zinc-100 dark:to-zinc-300 dark:text-zinc-900"
@@ -527,6 +683,7 @@ function LongPressActionButton(input: {
   disabled: boolean;
   icon: string;
   label: string;
+  hint?: string;
   onClick: () => void;
   onLongPress: () => void;
 }) {
@@ -565,7 +722,14 @@ function LongPressActionButton(input: {
       <span className="text-2xl" aria-hidden="true">
         {input.icon}
       </span>
-      <span className="text-base font-semibold">{input.label}</span>
+      <span>
+        <span className="block text-base font-semibold">{input.label}</span>
+        {input.hint ? (
+          <span className="block text-[10px] font-medium opacity-75">
+            {input.hint}
+          </span>
+        ) : null}
+      </span>
     </button>
   );
 }
@@ -573,9 +737,14 @@ function LongPressActionButton(input: {
 function PickerModal(input: {
   title: string;
   players: TeamRosterEntry[];
+  events: BeerEvent[];
+  type: BeerEventType;
+  action: "record" | "remove";
   onClose: () => void;
   onSelect: (playerId: string) => void;
 }) {
+  const selectionMadeRef = useRef(false);
+
   return (
     <div className="fixed inset-0 z-20 flex items-end bg-black/50 p-4 sm:items-center sm:justify-center">
       <div className="w-full max-w-md rounded-3xl bg-white p-4 shadow-2xl dark:bg-zinc-950">
@@ -586,23 +755,56 @@ function PickerModal(input: {
           </button>
         </div>
         <div className="mt-4 grid gap-3">
-          {input.players.map((player) => (
-            <button
-              key={player.playerId}
-              className="flex items-center gap-3 rounded-2xl border border-zinc-200 px-4 py-4 text-left dark:border-zinc-700"
-              onClick={() => input.onSelect(player.playerId)}
-            >
-              <PlayerAvatar
-                name={player.playerName}
-                photoUrl={player.playerPhotoUrl}
-                sizeClassName="h-14 w-14"
-              />
-              <div>
-                <div className="text-base font-medium">{player.playerName}</div>
-                <div className="text-sm text-zinc-500">Tap to confirm</div>
-              </div>
-            </button>
-          ))}
+          {input.players.map((player) => {
+            const count = input.events.filter(
+              (event) =>
+                event.playerId === player.playerId && event.type === input.type,
+            ).length;
+            const label =
+              input.type === "normal"
+                ? count === 1
+                  ? "beer"
+                  : "beers"
+                : count === 1
+                  ? "juice"
+                  : "juices";
+
+            return (
+              <button
+                key={player.playerId}
+                className="flex items-center gap-3 rounded-2xl border border-zinc-200 px-4 py-4 text-left disabled:opacity-40 dark:border-zinc-700"
+                disabled={input.action === "remove" && count === 0}
+                onClick={() => {
+                  if (selectionMadeRef.current) {
+                    return;
+                  }
+                  selectionMadeRef.current = true;
+                  input.onSelect(player.playerId);
+                }}
+              >
+                <PlayerAvatar
+                  name={player.playerName}
+                  photoUrl={player.playerPhotoUrl}
+                  sizeClassName="h-14 w-14"
+                />
+                <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-medium">{player.playerName}</div>
+                    <div className="text-sm text-zinc-500">
+                      {input.action === "record"
+                        ? "Tap to record"
+                        : count > 0
+                          ? "Tap to subtract one"
+                          : "None to subtract"}
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm font-semibold tabular-nums dark:bg-zinc-800">
+                    {count} {label}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

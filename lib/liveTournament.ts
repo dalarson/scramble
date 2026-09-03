@@ -12,7 +12,9 @@ import type {
   Tournament,
 } from "@/types";
 
-function buildLeaderboardEntries(teams: readonly LiveTeamSummary[]): LeaderboardEntry[] {
+export function buildLeaderboardEntries(
+  teams: readonly LiveTeamSummary[],
+): LeaderboardEntry[] {
   return teams
     .map((teamSummary) => ({
       teamId: teamSummary.team.id,
