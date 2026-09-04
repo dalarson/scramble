@@ -131,7 +131,7 @@ function PlayerStatsTab(input: {
   return (
     <div className="min-h-0 flex-1 overflow-hidden rounded-3xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950">
       <div
-        className={`grid ${gridClass} items-center gap-1 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 dark:border-zinc-700`}
+        className={`hidden ${gridClass} items-center gap-1 border-b border-zinc-200 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 sm:grid dark:border-zinc-700`}
       >
         <span>#</span>
         <span>Player</span>
@@ -147,12 +147,44 @@ function PlayerStatsTab(input: {
         sortedStats.map((player, index) => (
           <div
             key={player.playerId}
-            className={`grid ${gridClass} items-center gap-1 px-3 py-2 ${
+            className={`px-3 py-3 sm:grid sm:items-center sm:gap-1 sm:py-2 ${gridClass} ${
               index !== sortedStats.length - 1 ? "border-b border-zinc-200 dark:border-zinc-800" : ""
             }`}
           >
-            <span className="text-xs font-semibold">{index + 1}</span>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex items-center gap-3 sm:hidden">
+              <span className="w-5 shrink-0 text-center text-sm font-semibold text-zinc-500">
+                {index + 1}
+              </span>
+              <PlayerAvatar name={player.playerName} photoUrl={player.playerPhotoUrl} />
+              <div className="min-w-0 flex-1">
+                <div className="break-words text-base font-medium leading-tight">
+                  {player.playerName}
+                </div>
+                <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {player.teamName}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`mt-3 grid ${input.showBirdieJuice ? "grid-cols-5" : "grid-cols-3"} gap-1 rounded-2xl bg-zinc-100 px-2 py-2 text-center sm:hidden dark:bg-zinc-900`}
+            >
+              <PlayerStat label="HCP" value={player.beerHandicap ?? "-"} />
+              <PlayerStat label="Beers" value={player.beers} />
+              <PlayerStat
+                label="Bonus"
+                value={input.beerScoringMode === "net" ? player.netBeerBonus : player.beers}
+              />
+              {input.showBirdieJuice ? (
+                <PlayerStat label="Juice" value={player.birdieJuice} />
+              ) : null}
+              {input.showBirdieJuice ? (
+                <PlayerStat label="Total" value={player.totalDrinks} />
+              ) : null}
+            </div>
+
+            <span className="hidden text-xs font-semibold sm:block">{index + 1}</span>
+            <div className="hidden min-w-0 items-center gap-2 sm:flex">
               <PlayerAvatar name={player.playerName} photoUrl={player.playerPhotoUrl} />
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{player.playerName}</div>
@@ -161,22 +193,39 @@ function PlayerStatsTab(input: {
                 </div>
               </div>
             </div>
-            <span className="text-right text-sm font-semibold">
-            {player.beerHandicap ?? "-"}
+            <span className="hidden text-right text-sm font-semibold sm:block">
+              {player.beerHandicap ?? "-"}
             </span>
-            <span className="text-right text-sm font-semibold">{player.beers}</span>
-            <span className="text-right text-sm font-semibold">
-            {input.beerScoringMode === "net" ? player.netBeerBonus : player.beers}
+            <span className="hidden text-right text-sm font-semibold sm:block">
+              {player.beers}
+            </span>
+            <span className="hidden text-right text-sm font-semibold sm:block">
+              {input.beerScoringMode === "net" ? player.netBeerBonus : player.beers}
             </span>
             {input.showBirdieJuice ? (
-            <span className="text-right text-sm font-semibold">{player.birdieJuice}</span>
+              <span className="hidden text-right text-sm font-semibold sm:block">
+                {player.birdieJuice}
+              </span>
             ) : null}
             {input.showBirdieJuice ? (
-            <span className="text-right text-sm font-semibold">{player.totalDrinks}</span>
+              <span className="hidden text-right text-sm font-semibold sm:block">
+                {player.totalDrinks}
+              </span>
             ) : null}
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+function PlayerStat(input: { label: string; value: string | number }) {
+  return (
+    <div>
+      <div className="text-[9px] font-medium uppercase tracking-wide text-zinc-500">
+        {input.label}
+      </div>
+      <div className="mt-0.5 text-sm font-semibold tabular-nums">{input.value}</div>
     </div>
   );
 }
